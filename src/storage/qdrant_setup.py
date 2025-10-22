@@ -1,4 +1,3 @@
-# src/storage/qdrant_setup.py
 import os
 from dotenv import load_dotenv, find_dotenv
 from qdrant_client import QdrantClient, models
