@@ -9,9 +9,16 @@ from src.handler.gemini_handler import answer_with_citations
 # Load environment
 load_dotenv()
 
-# Configuration
-QDRANT_URL = os.getenv("QDRANT_URL")
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+# Configuration - Use Streamlit secrets if available (for cloud deployment), otherwise fall back to env vars
+if "QDRANT_URL" in st.secrets:
+    QDRANT_URL = st.secrets["QDRANT_URL"]
+    QDRANT_API_KEY = st.secrets.get("QDRANT_API_KEY", "")
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+else:
+    QDRANT_URL = os.getenv("QDRANT_URL")
+    QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
 COLLECTION = "docs"
 VECTOR_NAME = "content_vector"
 MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
@@ -27,7 +34,16 @@ def load_embedding_model():
 
 @st.cache_resource
 def get_qdrant_client():
-    return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+    """Initialize Qdrant client with error handling"""
+    try:
+        client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+        # Test the connection
+        client.get_collections()
+        return client
+    except Exception as e:
+        st.error(f"Failed to connect to Qdrant: {str(e)}")
+        st.info(f"Qdrant URL: {QDRANT_URL}")
+        raise
 
 # Page config
 st.set_page_config(
@@ -144,21 +160,38 @@ search_button = st.button("🚀 Search", use_container_width=True)
 
 if search_button and query:
     with st.spinner("🔄 Searching knowledge base..."):
-        # Load models
-        model = load_embedding_model()
-        client = get_qdrant_client()
-        
-        # Generate query embedding
-        query_vector = model.encode(query, normalize_embeddings=True).tolist()
-        
-        # Search Qdrant
-        results = client.search(
-            collection_name=COLLECTION,
-            query_vector=(VECTOR_NAME, query_vector),
-            limit=num_results,
-            with_payload=True
-        )
-        
+        try:
+            # Load models
+            model = load_embedding_model()
+            client = get_qdrant_client()
+
+            # Generate query embedding
+            query_vector = model.encode(query, normalize_embeddings=True).tolist()
+
+            # Search Qdrant
+            results = client.search(
+                collection_name=COLLECTION,
+                query_vector=(VECTOR_NAME, query_vector),
+                limit=num_results,
+                with_payload=True
+            )
+        except Exception as e:
+            st.error("❌ Search failed!")
+            st.exception(e)
+            st.markdown("### Troubleshooting Tips:")
+            st.markdown("""
+            1. **Check Qdrant Connection**: Ensure your Qdrant instance is accessible
+            2. **Verify Secrets**: In Streamlit Cloud, go to 'Manage app' → 'Settings' → 'Secrets' and add:
+               ```toml
+               QDRANT_URL = "your-qdrant-url"
+               QDRANT_API_KEY = "your-api-key"
+               GEMINI_API_KEY = "your-gemini-key"
+               ```
+            3. **Check Collection**: Verify the collection '{COLLECTION}' exists in your Qdrant instance
+            4. **Network Access**: Ensure Qdrant URL is publicly accessible or properly configured
+            """)
+            st.stop()
+
         if not results:
             st.warning("No results found. Try a different query.")
         else:
