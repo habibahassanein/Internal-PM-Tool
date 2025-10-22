@@ -1,4 +1,6 @@
 import os
+import time
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
@@ -21,7 +23,7 @@ VECTOR_NAME = "content_vector"
 
 # Configuration
 CSV_PATH = "data/cleaned_pages.csv"
-BATCH_SIZE = 100  # Upload in batches of 100
+BATCH_SIZE = 20  # Upload in batches of 20 (smaller for network reliability)
 MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"  # 768-dim model
 
 def upload_vectors():
@@ -29,34 +31,51 @@ def upload_vectors():
     print(f"Loading data from {CSV_PATH}...")
     df = pd.read_csv(CSV_PATH)
     print(f"Loaded {len(df)} pages")
-    
-    # Initialize embedding model
+
+    # Initialize embedding model (force CPU to avoid MPS memory issues)
     print(f"Loading embedding model: {MODEL_NAME}...")
-    model = SentenceTransformer(MODEL_NAME)
+    model = SentenceTransformer(MODEL_NAME, device='cpu')
     embedding_dim = model.get_sentence_embedding_dimension()
     print(f"Embedding dimension: {embedding_dim}")
-    
-    # Connect to Qdrant
+    print("Using CPU for embeddings to avoid memory issues")
+
+    # Connect to Qdrant with increased timeout
     print(f"Connecting to Qdrant at {QDRANT_URL}...")
-    client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
-    
-    # Prepare texts for embedding (use title + text for richer context)
-    texts = []
-    for idx, row in df.iterrows():
-        title = row.get("title", "") or ""
-        content = row.get("cleaned_content", "") or ""
-        # Combine title and content for embedding
-        combined_text = f"{title}\n\n{content}".strip()
-        texts.append(combined_text)
-    
-    # Generate embeddings in batches
-    print("Generating embeddings...")
-    embeddings = model.encode(
-        texts,
-        show_progress_bar=True,
-        batch_size=32,
-        convert_to_numpy=True
+    client = QdrantClient(
+        url=QDRANT_URL,
+        api_key=QDRANT_API_KEY,
+        timeout=60  # 60 second timeout for network operations
     )
+
+    # Process in smaller chunks to avoid memory issues
+    EMBEDDING_CHUNK_SIZE = 100  # Process 100 documents at a time
+    all_embeddings = []
+
+    print(f"Generating embeddings in chunks of {EMBEDDING_CHUNK_SIZE}...")
+    for i in tqdm(range(0, len(df), EMBEDDING_CHUNK_SIZE), desc="Embedding chunks"):
+        chunk_df = df.iloc[i:i + EMBEDDING_CHUNK_SIZE]
+
+        # Prepare texts for this chunk
+        texts = []
+        for idx, row in chunk_df.iterrows():
+            title = row.get("title", "") or ""
+            content = row.get("cleaned_content", "") or ""
+            # Combine title and content for embedding
+            combined_text = f"{title}\n\n{content}".strip()
+            texts.append(combined_text)
+
+        # Generate embeddings for this chunk
+        chunk_embeddings = model.encode(
+            texts,
+            show_progress_bar=False,
+            batch_size=16,  # Smaller batch size
+            convert_to_numpy=True
+        )
+        all_embeddings.append(chunk_embeddings)
+
+    # Combine all embeddings
+    embeddings = np.vstack(all_embeddings)
+    print(f"Generated {len(embeddings)} embeddings")
     
     # Upload to Qdrant in batches
     print(f"Uploading {len(embeddings)} vectors to Qdrant in batches of {BATCH_SIZE}...")
@@ -65,7 +84,7 @@ def upload_vectors():
     for i in tqdm(range(0, len(df), BATCH_SIZE), total=total_batches, desc="Uploading"):
         batch_df = df.iloc[i:i + BATCH_SIZE]
         batch_embeddings = embeddings[i:i + BATCH_SIZE]
-        
+
         points = []
         for idx, (row_idx, row) in enumerate(batch_df.iterrows()):
             point = PointStruct(
@@ -78,12 +97,24 @@ def upload_vectors():
                 }
             )
             points.append(point)
-        
-        # Upload batch
-        client.upsert(
-            collection_name=COLLECTION,
-            points=points
-        )
+
+        # Upload batch with retry logic
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                client.upsert(
+                    collection_name=COLLECTION,
+                    points=points
+                )
+                break  # Success, exit retry loop
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    print(f"\n⚠️  Upload failed (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    print(f"\n❌ Failed to upload batch after {max_retries} attempts")
+                    raise
     
     print(f"✓ Successfully uploaded {len(df)} vectors to collection '{COLLECTION}'")
     

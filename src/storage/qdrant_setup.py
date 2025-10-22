@@ -42,7 +42,7 @@ def recreate_collection():
         ("source", models.PayloadSchemaType.KEYWORD),
         ("url", models.PayloadSchemaType.KEYWORD),
         ("page_id", models.PayloadSchemaType.INTEGER),
-        ("chunk_id", models.PayloadSchemaType.INTEe5GER),
+        ("chunk_id", models.PayloadSchemaType.INTEGER),
     ]:
         client.create_payload_index(
             collection_name=COLLECTION,
