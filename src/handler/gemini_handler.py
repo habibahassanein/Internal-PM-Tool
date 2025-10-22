@@ -3,9 +3,16 @@ import os, json, textwrap
 import google.generativeai as genai
 from dotenv import load_dotenv
 
-load_dotenv()
-API_KEY = os.getenv("GEMINI_API_KEY")
-assert API_KEY, "Missing GEMINI_API_KEY in .env"
+# Load API key from Streamlit secrets (production) or .env (local dev)
+try:
+    import streamlit as st
+    API_KEY = st.secrets.get("GEMINI_API_KEY")
+except (ImportError, FileNotFoundError, KeyError):
+    # Fallback to .env for local development
+    load_dotenv()
+    API_KEY = os.getenv("GEMINI_API_KEY")
+
+assert API_KEY, "Missing GEMINI_API_KEY in Streamlit secrets or .env"
 genai.configure(api_key=API_KEY)
 
 # Model: Gemini 2.5 Flash (fast, cheap). Change if you prefer Pro later.
