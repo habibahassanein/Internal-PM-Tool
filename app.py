@@ -114,6 +114,60 @@ st.markdown("""
         padding: 0.5rem 2rem;
         font-weight: 600;
     }
+    .answer-box {
+        background: linear-gradient(135deg, #f0f2f6 0%, #e8f0fe 100%);
+        padding: 25px;
+        border-radius: 12px;
+        border-left: 5px solid #1f77b4;
+        margin: 15px 0;
+        font-size: 16px;
+        line-height: 1.7;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .citation-card {
+        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+        padding: 18px;
+        border-radius: 10px;
+        border: 1px solid #e1e5e9;
+        margin: 12px 0;
+        box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .citation-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+    }
+    .citation-title {
+        font-weight: bold;
+        color: #1f77b4;
+        margin-bottom: 10px;
+        font-size: 16px;
+    }
+    .citation-evidence {
+        font-style: italic;
+        color: #555;
+        margin-bottom: 10px;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        padding: 12px;
+        border-radius: 6px;
+        border-left: 3px solid #28a745;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+    .metric-container {
+        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #e1e5e9;
+        text-align: center;
+    }
+    .search-summary {
+        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 4px solid #2196f3;
+        margin: 10px 0;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -186,22 +240,22 @@ if search_button and query:
     
     # Search Knowledge Base (Qdrant)
     if search_knowledge_base:
-        with st.spinner("🔄 Searching knowledge base..."):
-            try:
-                # Load models
-                model = load_embedding_model()
-                client = get_qdrant_client()
+    with st.spinner("🔄 Searching knowledge base..."):
+        try:
+            # Load models
+            model = load_embedding_model()
+            client = get_qdrant_client()
 
-                # Generate query embedding
-                query_vector = model.encode(query, normalize_embeddings=True).tolist()
+            # Generate query embedding
+            query_vector = model.encode(query, normalize_embeddings=True).tolist()
 
-                # Search Qdrant
-                results = client.search(
-                    collection_name=COLLECTION,
-                    query_vector=(VECTOR_NAME, query_vector),
-                    limit=num_results,
-                    with_payload=True
-                )
+            # Search Qdrant
+            results = client.search(
+                collection_name=COLLECTION,
+                query_vector=(VECTOR_NAME, query_vector),
+                limit=num_results,
+                with_payload=True
+            )
                 
                 # Prepare Qdrant results
                 for r in results:
@@ -212,24 +266,24 @@ if search_button and query:
                         "score": r.score
                     })
                     
-            except Exception as e:
+        except Exception as e:
                 st.error("❌ Knowledge base search failed!")
-                st.exception(e)
-                st.markdown("### Troubleshooting Tips:")
-                st.markdown("""
-                1. **Check Qdrant Connection**: Ensure your Qdrant instance is accessible
-                2. **Verify Secrets**: In Streamlit Cloud, go to 'Manage app' → 'Settings' → 'Secrets' and add:
-                   ```toml
-                   QDRANT_URL = "your-qdrant-url"
-                   QDRANT_API_KEY = "your-api-key"
-                   GEMINI_API_KEY = "your-gemini-key"
-                   ```
-                3. **Check Collection**: Verify the collection '{COLLECTION}' exists in your Qdrant instance
-                4. **Network Access**: Ensure Qdrant URL is publicly accessible or properly configured
-                """)
+            st.exception(e)
+            st.markdown("### Troubleshooting Tips:")
+            st.markdown("""
+            1. **Check Qdrant Connection**: Ensure your Qdrant instance is accessible
+            2. **Verify Secrets**: In Streamlit Cloud, go to 'Manage app' → 'Settings' → 'Secrets' and add:
+               ```toml
+               QDRANT_URL = "your-qdrant-url"
+               QDRANT_API_KEY = "your-api-key"
+               GEMINI_API_KEY = "your-gemini-key"
+               ```
+            3. **Check Collection**: Verify the collection '{COLLECTION}' exists in your Qdrant instance
+            4. **Network Access**: Ensure Qdrant URL is publicly accessible or properly configured
+            """)
                 if not search_slack and not search_confluence:
-                    st.stop()
-    
+            st.stop()
+
     # Search Slack
     if search_slack:
         with st.spinner("💬 Searching Slack messages..."):
@@ -270,9 +324,9 @@ if search_button and query:
     
     if total_results == 0:
         st.warning("No results found from any source. Try a different query or enable more search sources.")
-    else:
+        else:
         # Generate AI answer using multiple sources
-        with st.spinner("🤖 Generating answer..."):
+            with st.spinner("🤖 Generating answer..."):
             if search_knowledge_base and (search_slack or search_confluence):
                 # Use multiple sources
                 response = answer_with_multiple_sources(query, qdrant_results, slack_results, confluence_results)
@@ -291,29 +345,153 @@ if search_button and query:
                     })
                 response = answer_with_citations(query, all_passages)
         
-        # Display answer
+        # Display enhanced answer section
         st.markdown("---")
-        st.subheader("📝 Answer")
+        st.subheader("📝 AI-Generated Answer")
+        
+        # Add comprehensive search summary
+        total_sources = len(qdrant_results) + len(slack_results) + len(confluence_results)
+        enabled_sources = []
+        if search_knowledge_base:
+            enabled_sources.append("Knowledge Base")
+        if search_slack:
+            enabled_sources.append("Slack")
+        if search_confluence:
+            enabled_sources.append("Confluence")
+        
+        # Enhanced search summary with more details
+        st.markdown(f"""
+        <div class="search-summary">
+            <h4>🔍 Search Analysis</h4>
+            <p><strong>Query:</strong> "{query}"</p>
+            <p><strong>Sources Searched:</strong> {', '.join(enabled_sources) if enabled_sources else 'None'}</p>
+            <p><strong>Total Results Found:</strong> {total_sources}</p>
+            <p><strong>Search Strategy:</strong> Multi-source AI analysis with relevance scoring</p>
+        </div>
+        """, unsafe_allow_html=True)
         
         if response.get("exists"):
+            # Enhanced answer display with more context
             st.markdown(f'<div class="answer-box">{response.get("answer", "")}</div>', unsafe_allow_html=True)
             
-            # Display citations
-            citations = response.get("citations", [])
-            if citations:
-                st.markdown("### 📚 Sources")
-                for i, cite in enumerate(citations, 1):
-                    with st.container():
-                        st.markdown(f"""
-                        <div class="citation-card">
-                            <div class="citation-title">{i}. {cite.get('title', 'Untitled')}</div>
-                            <div class="citation-evidence">"{cite.get('evidence', '')}"</div>
-                            <a href="{cite.get('url', '#')}" target="_blank">🔗 View source</a>
-                        </div>
-                        """, unsafe_allow_html=True)
-        else:
-            st.warning("⚠️ The available sources don't contain sufficient information to answer this query.")
-            st.info(response.get("answer", ""))
+            # Add confidence indicator and analysis details
+            st.markdown("### 📊 Analysis Details")
+            
+            # Create metrics with enhanced styling
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric(
+                    "📚 Knowledge Base", 
+                    len(qdrant_results), 
+                    help="Documents from your indexed knowledge base",
+                    delta=f"{len(qdrant_results)} documents analyzed" if qdrant_results else "No documents found"
+                )
+            with col2:
+                st.metric(
+                    "💬 Slack Messages", 
+                    len(slack_results), 
+                    help="Recent discussions and conversations",
+                    delta=f"{len(slack_results)} messages analyzed" if slack_results else "No messages found"
+                )
+            with col3:
+                st.metric(
+                    "📖 Confluence Pages", 
+                    len(confluence_results), 
+                    help="Official documentation and guides",
+                    delta=f"{len(confluence_results)} pages analyzed" if confluence_results else "No pages found"
+                )
+            
+            # Add AI confidence indicator
+            st.markdown("### 🤖 AI Analysis Confidence")
+            
+            # Calculate confidence based on source diversity and result count
+            confidence_score = 0
+            if qdrant_results:
+                confidence_score += 30
+            if slack_results:
+                confidence_score += 25
+            if confluence_results:
+                confidence_score += 25
+            if total_sources >= 5:
+                confidence_score += 20
+            
+            confidence_level = "High" if confidence_score >= 70 else "Medium" if confidence_score >= 40 else "Low"
+            confidence_color = "🟢" if confidence_score >= 70 else "🟡" if confidence_score >= 40 else "🔴"
+            
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 15px; border-radius: 8px; border-left: 4px solid #28a745;">
+                <strong>{confidence_color} Confidence Level: {confidence_level}</strong><br>
+                <small>Based on source diversity ({len(enabled_sources)} sources) and result count ({total_sources} results)</small>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Enhanced citations with source breakdown
+                citations = response.get("citations", [])
+                if citations:
+                st.markdown("### 📚 Supporting Sources")
+                
+                # Group citations by source type
+                kb_citations = [c for c in citations if c.get('source', '') == 'knowledge_base']
+                slack_citations = [c for c in citations if c.get('source', '') == 'slack']
+                confluence_citations = [c for c in citations if c.get('source', '') == 'confluence']
+                
+                if kb_citations:
+                    st.markdown("#### 📚 Knowledge Base Sources")
+                    for i, cite in enumerate(kb_citations, 1):
+                        with st.container():
+                            st.markdown(f"""
+                            <div class="citation-card">
+                                <div class="citation-title">{i}. {cite.get('title', 'Untitled')}</div>
+                                <div class="citation-evidence">"{cite.get('evidence', '')}"</div>
+                                <a href="{cite.get('url', '#')}" target="_blank">🔗 View document</a>
+                            </div>
+                            """, unsafe_allow_html=True)
+                
+                if slack_citations:
+                    st.markdown("#### 💬 Slack Discussion Sources")
+                    for i, cite in enumerate(slack_citations, 1):
+                        with st.container():
+                            st.markdown(f"""
+                            <div class="citation-card">
+                                <div class="citation-title">{i}. {cite.get('title', 'Untitled')}</div>
+                                <div class="citation-evidence">"{cite.get('evidence', '')}"</div>
+                                <a href="{cite.get('url', '#')}" target="_blank">🔗 View in Slack</a>
+                            </div>
+                            """, unsafe_allow_html=True)
+                
+                if confluence_citations:
+                    st.markdown("#### 📖 Confluence Documentation Sources")
+                    for i, cite in enumerate(confluence_citations, 1):
+                        with st.container():
+                            st.markdown(f"""
+                            <div class="citation-card">
+                                <div class="citation-title">{i}. {cite.get('title', 'Untitled')}</div>
+                                <div class="citation-evidence">"{cite.get('evidence', '')}"</div>
+                                <a href="{cite.get('url', '#')}" target="_blank">🔗 View page</a>
+                            </div>
+                            """, unsafe_allow_html=True)
+            else:
+            st.warning("⚠️ **Insufficient Information**: The available sources don't contain sufficient information to answer this query.")
+            st.info(f"**AI Response**: {response.get('answer', '')}")
+            
+            # Provide suggestions for better results
+            st.markdown("### 💡 Suggestions for Better Results")
+            suggestions = []
+            if not search_slack:
+                suggestions.append("Enable Slack search to find recent discussions")
+            if not search_confluence:
+                suggestions.append("Enable Confluence search to find documentation")
+            if not search_knowledge_base:
+                suggestions.append("Enable Knowledge Base search to find indexed documents")
+            
+            if suggestions:
+                for suggestion in suggestions:
+                    st.markdown(f"• {suggestion}")
+            else:
+                st.markdown("• Try rephrasing your question with different keywords")
+                st.markdown("• Check if the information might be in a different source")
+                st.markdown("• Consider searching for related topics")
         
         # Show raw results in expanders
         if qdrant_results:
