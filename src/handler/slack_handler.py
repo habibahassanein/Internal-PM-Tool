@@ -280,7 +280,7 @@ def _search_channel_all_history(
                     continue
                 
                 # Skip system messages
-                if msg.get("subtype") in ["channel_join", "channel_leave", "channel_topic", "channel_purpose"]:                                                 
+                if msg.get("subtype") in ["channel_join", "channel_leave", "channel_topic", "channel_purpose"]:
                     continue
                 
                 # Calculate semantic relevance score
@@ -312,7 +312,7 @@ def _search_channel_all_history(
                         "strategy": "smart_targeted"
                     })
             
-            next_cursor = (response.get("response_metadata") or {}).get("next_cursor") or ""                                                                    
+            next_cursor = (response.get("response_metadata") or {}).get("next_cursor") or ""
             if not next_cursor:
                 break
         
@@ -791,7 +791,7 @@ def search_slack_simplified(
     if not all_results:
         logger.warning("No results from either strategy")
         return []
-    
+
     # Deduplicate by message_timestamp + channel_id
     unique_results = _deduplicate_results(all_results)
     logger.info(f"After deduplication: {len(unique_results)} unique results")
@@ -851,9 +851,9 @@ def search_slack_messages(
             "channel": result.get("channel", "unknown"),
             "ts": result.get("ts", ""),
             "permalink": result.get("permalink", ""),
-            "source": "slack"
-        })
-    
+                        "source": "slack"
+                    })
+            
     return legacy_results
 
 
