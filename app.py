@@ -19,19 +19,15 @@ load_dotenv()
 
 # Page config (do this as early as possible)
 st.set_page_config(
-    page_title="Internal PM Tool Search Assistant",
-    page_icon="🔍",
+    page_title="Internal PM Tool",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # Constants / Tunables
-COLLECTION = "docs"
-VECTOR_NAME = "content_vector"
-MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
-QDRANT_SCORE_MIN = 0.25  # minimum cosine score to consider a hit
 LOGO_PATH = "assets/company_logo.png"
-LLM_NAME = "Gemini"  # surfaced in UI (handlers may choose the exact sub-model internally)
+LLM_NAME = "Gemini 2.5 Flash"
 
 # =========================
 # Secrets & Keys
@@ -52,7 +48,7 @@ GEMINI_API_KEY = _get_secret_or_env("GEMINI_API_KEY")
 
 @st.cache_resource
 def load_embedding_model():
-    return SentenceTransformer(MODEL_NAME)
+    return SentenceTransformer("sentence-transformers/all-mpnet-base-v2")
 
 @st.cache_resource
 def get_qdrant_client():
@@ -154,56 +150,43 @@ with col2:
         logo_col1, logo_col2, logo_col3 = st.columns([1, 2, 1])
         with logo_col2:
             st.image(LOGO_PATH, width=180)
-    st.markdown('<div class="main-header">Internal PM Tool Search Assistant</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">🔍 Powered by AI • Search across docs, community, and support</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Internal PM Tool</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle">Comprehensive Search Across All Sources</div>', unsafe_allow_html=True)
 
 # =========================
 # Sidebar
 # =========================
 
 with st.sidebar:
-    st.header("⚙️ Settings")
-
-    num_results = st.slider("Number of results", min_value=3, max_value=10, value=5, step=1)
-
+    st.header("Search Configuration")
+    
+    num_results = st.slider("Results per source", min_value=5, max_value=15, value=10, step=1)
+    
     st.markdown("---")
-    st.subheader("🔍 Search Sources")
-
-    search_knowledge_base = st.checkbox("📚 Knowledge Base (Qdrant)", value=True, help="Search your indexed documents")
-    search_slack = st.checkbox("💬 Slack Messages", value=False, help="Search Slack channels and messages")
-    search_confluence = st.checkbox("📖 Confluence Pages", value=False, help="Search Confluence documentation")
-
-    if search_slack:
-        slack_channel = st.text_input("Slack Channel (optional)", placeholder="e.g., general, engineering",
-                                      help="Leave empty to search all channels")
-        slack_max_age = st.selectbox("Message Age", ["24h", "7d", "30d", "90d", "All"], index=2,
-                                     help="Maximum age of messages to search")
-    else:
-        slack_channel, slack_max_age = None, "30d"
-
-    if search_confluence:
-        confluence_space = st.text_input("Confluence Space (optional)", placeholder="e.g., PROJ, DOCS",
-                                         help="Leave empty to search all spaces")
-    else:
-        confluence_space = None
-
+    st.subheader("Search Sources")
+    st.info("""
+    **All sources are automatically searched:**
+    - 📚 Incorta Community, Docs & Support
+    - 💬 Slack Messages  
+    - 📖 Confluence Pages
+    """)
+    
     st.markdown("---")
-    st.subheader("📊 System Info")
+    st.subheader("System Info")
     st.info(f"""
-**Vector DB:** Qdrant  
-**Embedding Model:** MPNet-base-v2  
-**LLM:** {LLM_NAME}  
-**Collection:** {COLLECTION}
-""")
-
+    **AI Model:** {LLM_NAME}  
+    **Vector DB:** Qdrant  
+    **Search:** Multi-source analysis
+    """)
+    
     st.markdown("---")
-    st.subheader("💡 Tips")
+    st.subheader("Usage Tips")
     st.markdown("""
-- Use natural language queries  
-- Be specific for better results  
-- Check citations for source verification  
-- Enable multiple sources for comprehensive results  
-""")
+    - Ask specific questions
+    - Use natural language
+    - Results are ranked by relevance
+    - All sources searched automatically
+    """)
 
 # =========================
 # Session state helpers (for clickable examples)
@@ -226,11 +209,12 @@ def _trigger_search_with_query(q: str):
 
 with st.form("search_form", clear_on_submit=False):
     query = st.text_input(
-        "🔎 Ask a question about Incorta, product features, or troubleshooting:",
-        placeholder="SAML SSO?",
+        "Search Query",
+        placeholder="Ask a question about Incorta, product features, or troubleshooting...",
         key="search_query",
+        help="Search across all available sources automatically"
     )
-    submitted = st.form_submit_button("🚀 Search", use_container_width=True)
+    submitted = st.form_submit_button("Search All Sources", use_container_width=True)
 
 # Auto-submit if user clicked a suggested query button
 if st.session_state.get("auto_submit", False):
@@ -242,9 +226,8 @@ if st.session_state.get("auto_submit", False):
 # =========================
 
 def _ensure_sources_selected():
-    if not any([search_knowledge_base, search_slack, search_confluence]):
-        st.warning("Please enable at least one source in the sidebar.")
-        st.stop()
+    # All sources are automatically enabled
+    pass
 
 def _ensure_gemini_key_if_needed():
     # Only needed if we are going to call the LLM (i.e., when there are any results)
@@ -258,23 +241,9 @@ def _ensure_gemini_key_if_needed():
 
 def _cosine_score_ok(score: float) -> bool:
     try:
-        return float(score) >= QDRANT_SCORE_MIN
+        return float(score) >= 0.25  # minimum cosine score to consider a hit
     except Exception:
         return False
-
-def _confidence_label(source_count: int, total_results: int) -> tuple[str, str]:
-    score = 0
-    if search_knowledge_base:
-        score += 30
-    if search_slack:
-        score += 25
-    if search_confluence:
-        score += 25
-    if total_results >= 5:
-        score += 20
-    level = "High" if score >= 70 else ("Medium" if score >= 40 else "Low")
-    color = "🟢" if score >= 70 else ("🟡" if score >= 40 else "🔴")
-    return level, color
 
 # =========================
 # Execute Search
@@ -283,128 +252,99 @@ def _confidence_label(source_count: int, total_results: int) -> tuple[str, str]:
 if submitted and query:
     _ensure_sources_selected()
 
-    # Initialize results
+    # Initialize results - all sources are automatically searched
     qdrant_results = []
     slack_results = []
     confluence_results = []
 
-    # Knowledge Base (Qdrant)
-    if search_knowledge_base:
-        with st.spinner("🔄 Searching knowledge base..."):
-            try:
-                model = load_embedding_model()
-                client = get_qdrant_client()
+    # Incorta Community, Docs & Support - Always searched
+    with st.spinner("🔄 Searching Incorta Community, Docs & Support..."):
+        try:
+            model = load_embedding_model()
+            client = get_qdrant_client()
 
-                query_vector = model.encode(query, normalize_embeddings=True).tolist()
+            query_vector = model.encode(query, normalize_embeddings=True).tolist()
 
-                results = client.search(
-                    collection_name=COLLECTION,
-                    query_vector=(VECTOR_NAME, query_vector),
-                    limit=num_results,
-                    with_payload=True
-                )
+            results = client.search(
+                collection_name="docs",
+                query_vector=("content_vector", query_vector),
+                limit=num_results,
+                with_payload=True
+            )
 
-                for r in results:
-                    if _cosine_score_ok(r.score):
-                        qdrant_results.append({
-                            "title": r.payload.get("title", "") or "",
-                            "url": r.payload.get("url", "") or "",
-                            "text": r.payload.get("text", "") or "",
-                            "score": r.score
-                        })
+            for r in results:
+                if _cosine_score_ok(r.score):
+                    qdrant_results.append({
+                        "title": r.payload.get("title", "") or "",
+                        "url": r.payload.get("url", "") or "",
+                        "text": r.payload.get("text", "") or "",
+                        "score": r.score
+                    })
 
-            except Exception as e:
-                st.error("❌ Knowledge base search failed.")
-                with st.expander("Troubleshooting (developer)"):
-                    st.exception(e)
-                    st.markdown(f"""
+        except Exception as e:
+            st.error("❌ Incorta Community, Docs & Support search failed.")
+            with st.expander("Troubleshooting (developer)"):
+                st.exception(e)
+                st.markdown(f"""
 1. Check Qdrant connection/URL/API key.
-2. Verify the collection '{COLLECTION}' exists and the vector name '{VECTOR_NAME}' is configured.
+2. Verify the collection 'docs' exists and the vector name 'content_vector' is configured.
 3. Ensure network access to the Qdrant endpoint.
 """)
-                # If no other sources are enabled, stop here
-                if not (search_slack or search_confluence):
-                    st.stop()
 
-    # Slack
-    if search_slack:
-        with st.spinner("💬 Searching Slack messages..."):
-            try:
-                age_mapping = {"24h": 24, "7d": 168, "30d": 720, "90d": 2160, "All": 0}
-                max_age_hours = age_mapping.get(slack_max_age, 720)
+    # Slack - Always searched
+    with st.spinner("💬 Searching Slack messages..."):
+        try:
+            slack_results = search_slack_messages(
+                query=query,
+                max_results=num_results,
+                channel_filter=None,  # Search all channels
+                max_age_hours=0  # Search all history
+            ) or []
 
-                slack_results = search_slack_messages(
-                    query=query,
-                    max_results=num_results,
-                    channel_filter=slack_channel if slack_channel else None,
-                    max_age_hours=max_age_hours
-                ) or []
+        except Exception as e:
+            st.error("❌ Slack search failed.")
+            with st.expander("Troubleshooting (developer)"):
+                st.exception(e)
+            st.info("💡 Make sure SLACK_USER_TOKEN is set in Streamlit secrets.")
 
-            except Exception as e:
-                st.error("❌ Slack search failed.")
-                with st.expander("Troubleshooting (developer)"):
-                    st.exception(e)
-                st.info("💡 Make sure SLACK_USER_TOKEN is set in Streamlit secrets.")
+    # Confluence - Always searched
+    with st.spinner("📖 Searching Confluence pages..."):
+        try:
+            confluence_results = search_confluence_pages(
+                query=query,
+                max_results=num_results,
+                space_key=None  # Search all spaces
+            ) or []
 
-    # Confluence
-    if search_confluence:
-        with st.spinner("📖 Searching Confluence pages..."):
-            try:
-                confluence_results = search_confluence_pages(
-                    query=query,
-                    max_results=num_results,
-                    space_key=confluence_space if confluence_space else None
-                ) or []
-
-            except Exception as e:
-                st.error("❌ Confluence search failed.")
-                with st.expander("Troubleshooting (developer)"):
-                    st.exception(e)
-                st.info("💡 Ensure CONFLUENCE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN are set.")
+        except Exception as e:
+            st.error("❌ Confluence search failed.")
+            with st.expander("Troubleshooting (developer)"):
+                st.exception(e)
+            st.info("💡 Ensure CONFLUENCE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN are set.")
 
     total_results = len(qdrant_results) + len(slack_results) + len(confluence_results)
 
     if total_results == 0:
-        st.warning("No results found from any source. Try a different query or enable more search sources.")
+        st.warning("No results found from any source. Try a different query.")
     else:
         # We will call the LLM, ensure key exists
         _ensure_gemini_key_if_needed()
 
         with st.spinner("🤖 Generating answer..."):
-            if search_knowledge_base and (search_slack or search_confluence):
-                response = answer_with_multiple_sources(query, qdrant_results, slack_results, confluence_results)
-            elif search_knowledge_base:
-                passages = [{"title": r.get("title", ""), "url": r.get("url", ""), "text": r.get("text", "")}
-                            for r in qdrant_results]
-                response = answer_with_citations(query, passages)
-            else:
-                all_passages = []
-                for r in (slack_results + confluence_results):
-                    all_passages.append({
-                        "title": r.get("title", ""),
-                        "url": r.get("url", ""),
-                        "text": r.get("text", "") or r.get("excerpt", "")
-                    })
-                response = answer_with_citations(query, all_passages)
+            # Always use multiple sources since all are searched
+            response = answer_with_multiple_sources(query, qdrant_results, slack_results, confluence_results)
 
         st.markdown("---")
-        st.subheader("📝 AI-Generated Answer")
+        st.subheader("Search Results")
 
-        enabled_sources = []
-        if search_knowledge_base:
-            enabled_sources.append("Knowledge Base")
-        if search_slack:
-            enabled_sources.append("Slack")
-        if search_confluence:
-            enabled_sources.append("Confluence")
-
+        # Simple analysis summary
         st.markdown(f"""
         <div class="search-summary">
-            <h4>🔍 Search Analysis</h4>
+            <h4>Search Analysis</h4>
             <p><strong>Query:</strong> "{html.escape(query)}"</p>
-            <p><strong>Sources Searched:</strong> {', '.join(enabled_sources) if enabled_sources else 'None'}</p>
-            <p><strong>Total Results Found:</strong> {total_results}</p>
-            <p><strong>Search Strategy:</strong> Multi-source AI analysis with relevance scoring</p>
+            <p><strong>Sources Searched:</strong> Incorta Community/Docs/Support, Slack, Confluence</p>
+            <p><strong>Total Results:</strong> {total_results}</p>
+            <p><strong>Method:</strong> Multi-source AI analysis</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -414,30 +354,22 @@ if submitted and query:
             st.markdown(response.get("answer", ""))
             st.markdown('</div>', unsafe_allow_html=True)
 
-            st.markdown("### 📊 Analysis Details")
+            st.markdown("### Results by Source")
             col_a, col_b, col_c = st.columns(3)
             with col_a:
-                st.metric("📚 Knowledge Base", len(qdrant_results),
-                          delta=f"{len(qdrant_results)} documents analyzed" if qdrant_results else "No documents found")
+                st.metric("📚 Incorta Community/Docs/Support", len(qdrant_results),
+                          delta=f"{len(qdrant_results)} documents" if qdrant_results else "No results")
             with col_b:
                 st.metric("💬 Slack Messages", len(slack_results),
-                          delta=f"{len(slack_results)} messages analyzed" if slack_results else "No messages found")
+                          delta=f"{len(slack_results)} messages" if slack_results else "No results")
             with col_c:
                 st.metric("📖 Confluence Pages", len(confluence_results),
-                          delta=f"{len(confluence_results)} pages analyzed" if confluence_results else "No pages found")
-
-            level, color = _confidence_label(len(enabled_sources), total_results)
-            st.markdown(f"""
-            <div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 15px; border-radius: 8px; border-left: 4px solid #28a745;">
-                <strong>{color} Confidence Level: {level}</strong><br>
-                <small>Based on source diversity ({len(enabled_sources)} sources) and result count ({total_results} results)</small>
-            </div>
-            """, unsafe_allow_html=True)
+                          delta=f"{len(confluence_results)} pages" if confluence_results else "No results")
 
             # Citations
             citations = response.get("citations", [])
             if citations:
-                st.markdown("### 📚 Supporting Sources")
+                st.markdown("### Supporting Sources")
 
                 def render_citation_block(header_emoji: str, header_text: str, items: list[dict]):
                     if not items:
@@ -461,7 +393,7 @@ if submitted and query:
                 slack_citations = [c for c in citations if c.get('source', '') == 'slack']
                 confluence_citations = [c for c in citations if c.get('source', '') == 'confluence']
 
-                render_citation_block("📚", "Knowledge Base Sources", kb_citations)
+                render_citation_block("📚", "Incorta Community/Docs/Support Sources", kb_citations)
                 render_citation_block("💬", "Slack Discussion Sources", slack_citations)
                 render_citation_block("📖", "Confluence Documentation Sources", confluence_citations)
 
@@ -470,20 +402,9 @@ if submitted and query:
                 st.info(f"**AI Response**: {response.get('answer', '')}")
 
                 st.markdown("### 💡 Suggestions for Better Results")
-                suggestions = []
-                if not search_slack:
-                    suggestions.append("Enable Slack search to find recent discussions.")
-                if not search_confluence:
-                    suggestions.append("Enable Confluence search to find documentation.")
-                if not search_knowledge_base:
-                    suggestions.append("Enable Knowledge Base search to find indexed documents.")
-                if suggestions:
-                    for s in suggestions:
-                        st.markdown(f"- {s}")
-                else:
-                    st.markdown("- Try rephrasing your question with different keywords.")
-                    st.markdown("- Check if the information might be in a different source.")
-                    st.markdown("- Consider searching for related topics.")
+                st.markdown("- Try rephrasing your question with different keywords.")
+                st.markdown("- Check if the information might be in a different source.")
+                st.markdown("- Consider searching for related topics.")
 
         else:
             st.warning("⚠️ **No definitive answer** could be generated from the retrieved content.")
@@ -491,9 +412,9 @@ if submitted and query:
 
         # Raw results expanders
         if qdrant_results:
-            with st.expander(f"📚 Knowledge Base Results ({len(qdrant_results)} found)"):
+            with st.expander(f"📚 Incorta Community/Docs/Support Results ({len(qdrant_results)} found)"):
                 for i, r in enumerate(qdrant_results, 1):
-                    st.markdown(f"**{i}. {r.get('title', 'Untitled')}** (Score: {r.get('score', 0):.4f})")
+                    st.markdown(f"**{i}. {r.get('title', 'Untitled')}**")
                     if r.get('url'):
                         st.markdown(f"🔗 [{r.get('url', '')}]({r.get('url', '')})")
                     preview = (r.get('text') or "")[:300]
@@ -532,7 +453,7 @@ if submitted and query:
 
 if not query:
     st.markdown("---")
-    st.subheader("💬 Example Queries")
+    st.subheader("Example Queries")
 
     examples_col1, examples_col2, examples_col3 = st.columns(3)
 
@@ -561,7 +482,7 @@ if not query:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666; padding: 1.25rem;">
-    <small>Internal PM Tool Search Assistant • Built with Streamlit, Qdrant, and Google Gemini</small>
+    <small>Internal PM Tool • Comprehensive Search Assistant • Powered by AI</small>
 </div>
 """, unsafe_allow_html=True)
  
