@@ -45,11 +45,12 @@ def build_user_payload(query: str, passages: list[dict], max_chars_per_passage: 
     # passages: [{"title":..., "url":..., "text":...}, ...]
     blocks = []
     for p in passages:
-        snippet = (p.get("text") or "")[:max_chars_per_passage]
+        snippet = (p.get("text") or p.get("excerpt") or "")[:max_chars_per_passage]
         blocks.append({
             "title": p.get("title",""),
             "url": p.get("url",""),
-            "snippet": snippet
+            "snippet": snippet,
+            "source": p.get("source", "unknown")
         })
     return json.dumps({"query": query, "passages": blocks}, ensure_ascii=False)
 
@@ -91,3 +92,50 @@ def answer_with_citations(query: str, passages: list[dict]) -> dict:
     data.setdefault("answer", "")
     data.setdefault("citations", [])
     return data
+
+
+def answer_with_multiple_sources(query: str, qdrant_results: list[dict], slack_results: list[dict], confluence_results: list[dict]) -> dict:
+    """
+    Generate answer using multiple data sources (Qdrant, Slack, Confluence).
+    
+    Args:
+        query: User query
+        qdrant_results: Results from Qdrant vector search
+        slack_results: Results from Slack search
+        confluence_results: Results from Confluence search
+    
+    Returns:
+        Dict with answer and citations from all sources
+    """
+    # Combine all results into a single passages list
+    all_passages = []
+    
+    # Add Qdrant results
+    for result in qdrant_results:
+        all_passages.append({
+            "title": result.get("title", ""),
+            "url": result.get("url", ""),
+            "text": result.get("text", ""),
+            "source": "knowledge_base"
+        })
+    
+    # Add Slack results
+    for result in slack_results:
+        all_passages.append({
+            "title": f"Slack: #{result.get('channel', 'unknown')} - @{result.get('username', 'unknown')}",
+            "url": result.get("permalink", ""),
+            "text": result.get("text", ""),
+            "source": "slack"
+        })
+    
+    # Add Confluence results
+    for result in confluence_results:
+        all_passages.append({
+            "title": result.get("title", ""),
+            "url": result.get("url", ""),
+            "text": result.get("excerpt", ""),
+            "source": "confluence"
+        })
+    
+    # Use the existing answer_with_citations function
+    return answer_with_citations(query, all_passages)
