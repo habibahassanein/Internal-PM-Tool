@@ -147,9 +147,7 @@ st.markdown("""
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     if Path(LOGO_PATH).exists():
-        logo_col1, logo_col2, logo_col3 = st.columns([1, 2, 1])
-        with logo_col2:
-            st.image(LOGO_PATH, width=180)
+        st.image(LOGO_PATH, width=180)
     st.markdown('<div class="main-header">Internal PM Tool</div>', unsafe_allow_html=True)
     st.markdown('<div class="subtitle">Comprehensive Search Across All Sources</div>', unsafe_allow_html=True)
 
@@ -189,19 +187,11 @@ with st.sidebar:
     """)
 
 # =========================
-# Session state helpers (for clickable examples)
+# Session state helpers
 # =========================
 
 if "search_query" not in st.session_state:
     st.session_state["search_query"] = ""
-
-if "auto_submit" not in st.session_state:
-    st.session_state["auto_submit"] = False
-
-def _trigger_search_with_query(q: str):
-    st.session_state["search_query"] = q
-    st.session_state["auto_submit"] = True
-    st.rerun()
 
 # =========================
 # Main Search Form
@@ -215,11 +205,6 @@ with st.form("search_form", clear_on_submit=False):
         help="Search across all available sources automatically"
     )
     submitted = st.form_submit_button("Search All Sources", use_container_width=True)
-
-# Auto-submit if user clicked a suggested query button
-if st.session_state.get("auto_submit", False):
-    submitted = True
-    st.session_state["auto_submit"] = False  # reset flag
 
 # =========================
 # Guardrails
@@ -347,7 +332,7 @@ if submitted and query:
             <p><strong>Method:</strong> Multi-source AI analysis</p>
         </div>
         """, unsafe_allow_html=True)
-
+        
         if response.get("exists"):
             # Render answer as Markdown (avoid unsafe HTML for LLM output)
             st.markdown('<div class="answer-box">', unsafe_allow_html=True)
@@ -448,32 +433,23 @@ if submitted and query:
                     st.markdown("---")
 
 # =========================
-# Clickable Example Queries
+# Example Queries
 # =========================
 
 if not query:
     st.markdown("---")
     st.subheader("Example Queries")
-
-    examples_col1, examples_col2, examples_col3 = st.columns(3)
-
-    with examples_col1:
-        if st.button("🔐 How do I set up SAML authentication?", key="ex_saml"):
-            _trigger_search_with_query("How do I set up SAML authentication?")
-        if st.button("📊 What are materialized views in Incorta?", key="ex_matviews"):
-            _trigger_search_with_query("What are materialized views in Incorta?")
-
-    with examples_col2:
-        if st.button("🐛 Troubleshooting data agent connection errors", key="ex_agent"):
-            _trigger_search_with_query("Troubleshooting data agent connection errors")
-        if st.button("⚡ How to optimize query performance?", key="ex_perf"):
-            _trigger_search_with_query("How to optimize query performance?")
-
-    with examples_col3:
-        if st.button("💬 Recent discussions about API issues", key="ex_api"):
-            _trigger_search_with_query("Recent discussions about API issues")
-        if st.button("📖 Documentation on deployment process", key="ex_deploy"):
-            _trigger_search_with_query("Documentation on deployment process")
+    
+    st.markdown("""
+    **Try these example queries:**
+    
+    🔐 How do I set up SAML authentication?  
+    📊 What are materialized views in Incorta?  
+    🐛 Troubleshooting data agent connection errors  
+    ⚡ How to optimize query performance?  
+    💬 Recent discussions about API issues  
+    📖 Documentation on deployment process  
+    """)
 
 # =========================
 # Footer
