@@ -564,3 +564,4 @@ st.markdown("""
     <small>Internal PM Tool Search Assistant • Built with Streamlit, Qdrant, and Google Gemini</small>
 </div>
 """, unsafe_allow_html=True)
+ 
