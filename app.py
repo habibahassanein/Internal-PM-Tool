@@ -1,6 +1,5 @@
 import os
 import html
-from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -26,7 +25,6 @@ st.set_page_config(
 )
 
 # Constants / Tunables
-LOGO_PATH = "assets/company_logo.png"
 LLM_NAME = "Gemini 2.5 Flash"
 
 # =========================
@@ -144,12 +142,8 @@ st.markdown("""
 # Header with logo
 # =========================
 
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    if Path(LOGO_PATH).exists():
-        st.image(LOGO_PATH, width=180)
-    st.markdown('<div class="main-header">Internal PM Tool</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">Comprehensive Search Across All Sources</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">Internal PM Tool</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Comprehensive Search Across All Sources</div>', unsafe_allow_html=True)
 
 # =========================
 # Sidebar
@@ -180,10 +174,11 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("Usage Tips")
     st.markdown("""
-    - Ask specific questions
-    - Use natural language
+    - Ask specific questions using keyterms for best results
+    - Use natural language with technical keywords
     - Results are ranked by relevance
     - All sources searched automatically
+    - **Note**: This app works best with keyterm searching and is still under development
     """)
 
 # =========================
