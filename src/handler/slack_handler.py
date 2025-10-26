@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Dict, List, Optional, Any, Set, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -8,32 +9,39 @@ from datetime import datetime
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-import streamlit as st
+from dotenv import load_dotenv
 
 from .channel_intelligence import get_channel_intelligence
 
 logger = logging.getLogger(__name__)
 
+# Load environment variables
+load_dotenv()
+
+# Module-level caches
+_slack_client: Optional[WebClient] = None
+_user_cache: Dict[str, str] = {}
+
 
 def _get_slack_client() -> WebClient:
-    """Get Slack client from session state or create new one."""
-    if "slack_client" not in st.session_state:
-        token = st.secrets.get("SLACK_USER_TOKEN")
+    """Get Slack client with module-level caching."""
+    global _slack_client
+    if _slack_client is None:
+        token = os.getenv("SLACK_USER_TOKEN")
         if not token:
             raise RuntimeError("Missing SLACK_USER_TOKEN environment variable.")
-        st.session_state["slack_client"] = WebClient(token=token)
-    return st.session_state["slack_client"]
+        _slack_client = WebClient(token=token)
+    return _slack_client
 
 
 def _resolve_username(client: WebClient, user_id: Optional[str]) -> str:
-    """Resolve user ID to username with caching."""
+    """Resolve user ID to username with module-level caching."""
     if not user_id:
         return "Unknown User"
     
-    # Use session state for caching
-    cache_key = f"user_cache_{user_id}"
-    if cache_key in st.session_state:
-        return st.session_state[cache_key]
+    # Use module-level cache
+    if user_id in _user_cache:
+        return _user_cache[user_id]
     
     try:
         resp = client.users_info(user=user_id)
@@ -50,13 +58,13 @@ def _resolve_username(client: WebClient, user_id: Optional[str]) -> str:
         else:
             username = f"User {user_id}"
         
-        st.session_state[cache_key] = username
+        _user_cache[user_id] = username
         return username
         
     except Exception as e:
         logger.warning(f"Failed to resolve username for {user_id}: {e}")
         fallback = f"User {user_id}"
-        st.session_state[cache_key] = fallback
+        _user_cache[user_id] = fallback
         return fallback
 
 

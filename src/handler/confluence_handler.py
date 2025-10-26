@@ -4,24 +4,28 @@ Provides search functionality across Confluence pages and spaces.
 """
 
 import logging
+import os
 from typing import List, Optional
 
 from atlassian import Confluence
-import streamlit as st
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
+# Load environment variables
+load_dotenv()
+
 
 def _get_confluence_client() -> Confluence:
-    """Get Confluence client with credentials from Streamlit secrets."""
-    url = st.secrets.get("CONFLUENCE_URL")
-    email = st.secrets.get("CONFLUENCE_EMAIL")
-    api_token = st.secrets.get("CONFLUENCE_API_TOKEN")
+    """Get Confluence client with credentials from environment variables."""
+    url = os.getenv("CONFLUENCE_URL")
+    email = os.getenv("CONFLUENCE_EMAIL")
+    api_token = os.getenv("CONFLUENCE_API_TOKEN")
     
     if not (url and email and api_token):
         raise RuntimeError(
-            "Missing Confluence credentials in Streamlit secrets. "
-            "Please add CONFLUENCE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN."
+            "Missing Confluence credentials in environment variables. "
+            "Please set CONFLUENCE_URL, CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN."
         )
     
     return Confluence(url=url, username=email, password=api_token, cloud=True)
@@ -100,7 +104,7 @@ def search_confluence_pages(
                         space_name = space_data.get("name", "Unknown") if isinstance(space_data, dict) else "Unknown"
                         
                         # Extract URL
-                        base_url = (st.secrets.get("CONFLUENCE_URL", "") or "").rstrip("/")
+                        base_url = (os.getenv("CONFLUENCE_URL", "") or "").rstrip("/")
                         links = content.get("_links", {})
                         webui = links.get("webui", "")
                         url = f"{base_url}{webui}" if base_url and webui else ""
@@ -197,7 +201,7 @@ def _alternative_confluence_search(client: Confluence, query: str, max_results: 
                         else:
                             continue  # No match, skip this page
                     
-                    base_url = (st.secrets.get("CONFLUENCE_URL", "") or "").rstrip("/")
+                    base_url = (os.getenv("CONFLUENCE_URL", "") or "").rstrip("/")
                     webui = page.get("_links", {}).get("webui", "")
                     url = f"{base_url}{webui}" if base_url and webui else ""
                     

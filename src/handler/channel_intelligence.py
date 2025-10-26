@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from typing import Dict, List, Optional, Set, Tuple
 from collections import defaultdict, Counter
@@ -9,9 +10,12 @@ import threading
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-import streamlit as st
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
 
 
 @dataclass
@@ -47,7 +51,7 @@ class ChannelIntelligence:
     1. Discover channel patterns and categories
     2. Extract keywords from names, purposes, and topics
     3. Build an index for fast relevant channel lookup
-    4. Cache results in session state for performance
+    4. Cache results in class instance for performance
     """
     
     def __init__(self, client: WebClient):
@@ -60,13 +64,11 @@ class ChannelIntelligence:
         self._initialized = False
     
     def _get_slack_client(self) -> WebClient:
-        """Get Slack client from session state or create new one."""
-        if "slack_client" not in st.session_state:
-            token = st.secrets.get("SLACK_USER_TOKEN")
-            if not token:
-                raise RuntimeError("Missing SLACK_USER_TOKEN environment variable.")                                                                            
-            st.session_state["slack_client"] = WebClient(token=token)
-        return st.session_state["slack_client"]
+        """Get Slack client with environment variable."""
+        token = os.getenv("SLACK_USER_TOKEN")
+        if not token:
+            raise RuntimeError("Missing SLACK_USER_TOKEN environment variable.")
+        return WebClient(token=token)
     
     def initialize(self, force_refresh: bool = False) -> None:
         """
@@ -79,18 +81,6 @@ class ChannelIntelligence:
             if self._initialized and not force_refresh:
                 return
             
-            # Check session state cache first
-            cache_key = "channel_intelligence_cache"
-            if not force_refresh and cache_key in st.session_state:
-                cached_data = st.session_state[cache_key]
-                self._channels = cached_data.get("channels", {})
-                self._patterns = cached_data.get("patterns", [])
-                self._keyword_index = defaultdict(set, cached_data.get("keyword_index", {}))                                                                    
-                self._category_index = defaultdict(set, cached_data.get("category_index", {}))                                                                  
-                self._initialized = True
-                logger.info(f"Loaded cached channel intelligence for {len(self._channels)} channels")                                                           
-                return
-            
             logger.info("Initializing channel intelligence...")
             
             # Discover all channels
@@ -101,14 +91,6 @@ class ChannelIntelligence:
             
             # Build keyword index
             self._build_keyword_index()
-            
-            # Cache in session state
-            st.session_state[cache_key] = {
-                "channels": self._channels,
-                "patterns": self._patterns,
-                "keyword_index": dict(self._keyword_index),
-                "category_index": dict(self._category_index)
-            }
             
             self._initialized = True
             logger.info(f"Channel intelligence initialized: {len(self._channels)} channels, {len(self._patterns)} patterns")                                    
@@ -486,18 +468,22 @@ class ChannelIntelligence:
         return matching_channels
 
 
+# Global instance for module-level caching
+_channel_intelligence: Optional[ChannelIntelligence] = None
+
+
 def get_channel_intelligence() -> ChannelIntelligence:
-    """Get or create ChannelIntelligence instance with caching."""
-    if "channel_intelligence" not in st.session_state:
-        token = st.secrets.get("SLACK_USER_TOKEN")
+    """Get or create ChannelIntelligence instance with module-level caching."""
+    global _channel_intelligence
+    if _channel_intelligence is None:
+        token = os.getenv("SLACK_USER_TOKEN")
         if not token:
             raise RuntimeError("Missing SLACK_USER_TOKEN environment variable.")
         client = WebClient(token=token)
-        st.session_state["channel_intelligence"] = ChannelIntelligence(client)
+        _channel_intelligence = ChannelIntelligence(client)
     
-    intelligence = st.session_state["channel_intelligence"]
-    intelligence.initialize()
-    return intelligence
+    _channel_intelligence.initialize()
+    return _channel_intelligence
 
 
 __all__ = ["ChannelIntelligence", "ChannelInfo", "ChannelPattern", "get_channel_intelligence"]
