@@ -20,7 +20,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-pro",
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite-preview-09-2025",
                              temperature=0.1, api_key=os.getenv("GEMINI_API_KEY"))
 
 
@@ -182,10 +182,64 @@ def search_docs(query: str, limit: int = 5):
 env_url = os.getenv("INCORTA_ENV_URL")
 tenant = os.getenv("INCORTA_TENANT")
 PAT = os.getenv("PAT")
+password = os.getenv("INCORTA_PASSWORD")
 
+
+def login_with_credentials(env_url, tenant, user, password):
+    """
+    Logs into Incorta using username, password, and tenant credentials.
+    Returns a session with relevant authentication details.
+    """
+    response = requests.post(
+        f"{env_url}/authservice/login",
+        data={"tenant": tenant, "user": user, "pass": password},
+        verify=True,
+        timeout=60
+    )
+
+    if response.status_code != 200:
+        response.raise_for_status()
+
+        # Extract session cookies
+    id_cookie, login_id = None, None
+    for item in response.cookies.items():
+        if item[0].startswith("JSESSIONID"):
+            id_cookie, login_id = item
+            break
+
+    if not id_cookie or not login_id:
+        raise Exception("Failed to retrieve session cookies during login.")
+
+        # Verify login and retrieve CSRF token
+    response = requests.get(
+        f"{env_url}/service/user/isLoggedIn",
+        cookies={id_cookie: login_id},
+        verify=True,
+        timeout=60
+    )
+
+    if response.status_code != 200 or "XSRF-TOKEN" not in response.cookies:
+        raise Exception(f"Failed to log in to {env_url} for tenant {tenant} using user {user}. Please verify credentials.")
+
+        # Retrieve CSRF token and access token
+    csrf_token = response.cookies["XSRF-TOKEN"]
+    authorization = response.json().get("accessToken")
+
+    if not authorization:
+        raise Exception("Failed to retrieve access token during login.")
+
+    return {
+        "env_url": env_url,
+        "id_cookie": id_cookie,
+        "id": login_id,
+        "csrf": csrf_token,
+        "authorization": authorization,
+        "verify": True,
+        "session_cookie": {id_cookie: login_id, "XSRF-TOKEN": csrf_token}
+    }
 
 @tool(
-    "get_schema_details",
+    "fetch_schema_details",
     description="""Fetch the details of a schema from Incorta.
     
     Args:
@@ -194,61 +248,41 @@ PAT = os.getenv("PAT")
     Returns:
         Details of the schema including tables and columns."""
 )
-def get_schema_details(schema_name: str):
-    """Fetches the details of a schema from Incorta."""
+def fetch_schema_details(schema_name: str):
+    """Fetch schema details from the Incorta environment."""
 
+    login_creds = login_with_credentials(env_url, tenant, user, password)
 
-    url = f"{env_url}/{tenant}/schema/{schema_name}/list"
+    url = f"{env_url}/bff/v1/schemas/name/{schema_name}"
+
+    cookie = ""
+    for key, value in login_creds['session_cookie'].items():
+        cookie += f"{key}={value};"
 
     headers = {
-        "accept": "application/json",
-        "authorization": f"Bearer {PAT}"
+        "Authorization": f"Bearer {login_creds['authorization']}",
+        "Content-Type": "application/json",
+        "X-XSRF-TOKEN": login_creds["csrf"],
+        "Cookie": cookie
     }
 
-    params = {
-        "limit": 0,
-        "offset": 0
-    }
-
-    response = requests.post(url, headers=headers, json=params, verify=False)
+    response = requests.get(url, headers=headers, verify=False)
 
     if response.status_code == 200:
-        json_response = response.json()
+        response_data = response.json()
 
-        tables = []
-        for table in json_response.get("tablesDetails", []):
-            table_name = table["name"]
-            columns_info = [{"column_name": column["name"], "description": column["description"], "data_type": column["dataType"]} for column in table["columns"]]
-
-            tables.append({
-                "table_name": table_name,
-                "columns": columns_info
-            })
-            
-
-        return {"tables": tables}
+        return {"schema_details": response_data}
     else:
-        return {"error": f"Failed to fetch schema status: {response.status_code} - {response.text}"}
+        return {"error": f"Failed to fetch schema details: {response.status_code} - {response.text}"}
     
 
 sqlx_host = os.getenv("INCORTA_SQLX_HOST")
 user = os.getenv("INCORTA_USERNAME")
 driver = "org.apache.hive.jdbc.HiveDriver"
 
-jbdc_driver_path = f"{Path(__file__).parent}/hive-jdbc-2.3.8-standalone.jar"
-
-def connect_to_sqlx(driver, sqlx_host, incorta_username, tenant, PAT, jbdc_driver_path):
-    """
-    Connects to the SQLX interface of the Incorta environment.
-    """
-    try:
-        return jaydebeapi.connect(driver, sqlx_host, [f"{incorta_username}%{tenant}", PAT], jbdc_driver_path)
-    except Exception as e:
-        return None
-
 
 @tool(
-    "get_table_data",
+    "fetch_table_data",
     description="""Fetch data from a specified table in the schema.
     
     Args:
@@ -257,24 +291,37 @@ def connect_to_sqlx(driver, sqlx_host, incorta_username, tenant, PAT, jbdc_drive
     Returns:
         Data from the table including columns and rows."""
 )
-def get_table_data(spark_sql: str):
-    """Fetches data from a specified table in the schema."""
+def fetch_table_data(spark_sql: str):
+    """Fetch table data from the Incorta environment."""
 
-    spark_db_client = connect_to_sqlx(driver, sqlx_host, user, tenant, PAT, jbdc_driver_path)
-    cursor = spark_db_client.cursor()
+    login_creds = login_with_credentials(env_url, tenant, user, password)
 
-    try:
-        cursor.execute(spark_sql)
-        rows = cursor.fetchall()
-        columns = [desc[0] for desc in cursor.description]
-        return {"columns": columns, "rows": rows}
-    except Exception as e:
-        return {"error": str(e)}
-    finally:
-        cursor.close()
+    url = f"{env_url}/bff/v1/sqlxquery"
+
+    cookie = ""
+    for key, value in login_creds['session_cookie'].items():
+        cookie += f"{key}={value};"
+
+    headers = {
+        "Authorization": f"Bearer {login_creds['authorization']}",
+        "Content-Type": "application/json",
+        "X-XSRF-TOKEN": login_creds["csrf"],
+        "Cookie": cookie
+    }
+
+    params = {
+        "sql": spark_sql
+    }
+
+    response = requests.post(url, headers=headers, json=params, verify=False)
+
+    if response.status_code == 200:
+        return {"data": response.json()}
+    else:
+        return {"error": f"Failed to fetch data: {response.status_code} - {response.text}"}
 
 
-tools = [search_confluence_optimized, search_slack_messages, search_docs, get_schema_details, get_table_data]
+tools = [search_confluence_optimized, search_slack_messages, search_docs, fetch_schema_details, fetch_table_data]
 
 from langchain_core.prompts import PromptTemplate
 
@@ -289,11 +336,11 @@ Use the `search_slack_messages` tool to search for relevant Slack messages.
 
 Use the `search_docs` tool to search for relevant Docs for the PM.
 
-Use the `get_schema_details` tool to get the details of Zendesk and Jira
-the input of the `get_schema_details` tool should be ONLY ZendeskTickets if the question is about Zendesk
+Use the `fetch_schema_details` tool to get the details of Zendesk and Jira
+the input of the `fetch_schema_details` tool should be ONLY ZendeskTickets if the question is about Zendesk
 and Jira_F if the question is about Jira.
 
-Use the `get_table_data` tool to get the data from the tables in ZendeskTickets and Jira_F schemas.
+Use the `fetch_table_data` tool to get the data from the tables in ZendeskTickets and Jira_F schemas.
 
 
 Your Default is to search in all the resources using the relevant tools above.

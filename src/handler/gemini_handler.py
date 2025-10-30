@@ -1,11 +1,24 @@
 # src/llm/gemini.py
 import os, json, textwrap
+import logging
 import google.generativeai as genai
 from dotenv import load_dotenv
 
+logger = logging.getLogger(__name__)
+
 # Load API key from environment variables
 load_dotenv()
-API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Try to use API manager, fallback to direct env var
+try:
+    from ..api_manager import create_api_manager_from_env
+    api_manager = create_api_manager_from_env()
+    API_KEY = api_manager.api_keys[0]  # Use first key
+    logger.info("Using API manager for Gemini")
+except Exception as e:
+    # Fallback to old method
+    API_KEY = os.getenv("GEMINI_API_KEY")
+    logger.info("Using direct env var for Gemini")
 
 assert API_KEY, "Missing GEMINI_API_KEY in environment variables"
 genai.configure(api_key=API_KEY)
