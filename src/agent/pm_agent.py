@@ -346,15 +346,104 @@ def fetch_table_data(spark_sql: str) -> dict:
 # Agent Setup
 # =========================
 
-def create_pm_agent(api_key: Optional[str] = None) -> AgentExecutor:
+class RetryAgentExecutor:
+    """
+    Wrapper for AgentExecutor that automatically retries with different API keys on quota errors.
+    """
+
+    def __init__(self, api_manager, tools, prompt, max_retries: int = 4):
+        """
+        Initialize retry agent executor.
+
+        Args:
+            api_manager: GeminiAPIManager instance
+            tools: List of agent tools
+            prompt: Agent prompt template
+            max_retries: Maximum number of retries (defaults to number of API keys)
+        """
+        self.api_manager = api_manager
+        self.tools = tools
+        self.prompt = prompt
+        self.max_retries = min(max_retries, len(api_manager.api_keys))
+        self.current_executor = None
+        self._create_executor()
+
+    def _create_executor(self):
+        """Create a new agent executor with current API key."""
+        llm = self.api_manager.get_llm()
+        agent = create_react_agent(llm, self.tools, self.prompt)
+        self.current_executor = AgentExecutor(
+            agent=agent,
+            tools=self.tools,
+            handle_parsing_errors=True,
+            verbose=True,
+            max_iterations=10
+        )
+
+    def stream(self, inputs: dict):
+        """
+        Stream agent execution with automatic retry on quota errors.
+
+        Args:
+            inputs: Agent inputs (e.g., {"input": "query"})
+
+        Yields:
+            Agent execution chunks
+        """
+        attempt = 0
+        last_error = None
+
+        while attempt < self.max_retries:
+            try:
+                # Stream from current executor
+                for chunk in self.current_executor.stream(inputs):
+                    yield chunk
+
+                # If we get here, execution succeeded
+                self.api_manager.mark_success()
+                return
+
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+
+                # Check if it's a quota/rate limit error
+                if any(keyword in error_str for keyword in ["quota", "429", "rate limit", "resourceexhausted"]):
+                    attempt += 1
+                    logger.warning(f"Quota error on attempt {attempt}/{self.max_retries}. Rotating API key...")
+
+                    if attempt < self.max_retries:
+                        # Mark failure and rotate key
+                        self.api_manager.mark_failure(error_type="quota")
+
+                        # Recreate executor with new API key
+                        self._create_executor()
+
+                        # Small delay before retry
+                        import time
+                        time.sleep(1)
+                        continue
+                    else:
+                        # All keys exhausted
+                        raise Exception(f"All {self.max_retries} API keys exhausted quota limits. Please wait or upgrade your plan.") from e
+                else:
+                    # Non-quota error, re-raise immediately
+                    logger.error(f"Non-quota error: {e}")
+                    raise
+
+        # If we exit the loop, all retries failed
+        raise Exception(f"Failed after {self.max_retries} attempts") from last_error
+
+
+def create_pm_agent(api_key: Optional[str] = None):
     """
     Create and configure the Product Manager agent with API key rotation support.
-    
+
     Args:
         api_key: Optional Gemini API key (uses API manager with multiple keys if not provided)
-    
+
     Returns:
-        Configured AgentExecutor instance
+        Configured RetryAgentExecutor or AgentExecutor instance
     """
     # Try to use API manager for multiple keys
     api_manager = None
@@ -363,33 +452,13 @@ def create_pm_agent(api_key: Optional[str] = None) -> AgentExecutor:
             from ..api_manager import create_api_manager_from_env
             api_manager = create_api_manager_from_env()
             logger.info(f"Agent: Using API manager with {len(api_manager.api_keys)} key(s)")
-            # Get current key from manager
-            if api_manager.rotation_strategy == "round_robin":
-                api_key = api_manager.api_keys[api_manager.current_index]
-            else:
-                import random
-                api_key = random.choice(api_manager.api_keys)
         except Exception as e:
             logger.warning(f"Agent: Failed to create API manager: {e}, using single key")
             api_key = os.getenv("GEMINI_API_KEY")
-    
-    if not api_key:
+
+    if not api_manager and not api_key:
         raise ValueError("GEMINI_API_KEY must be set in environment or provided as argument")
-    
-    # Initialize LLM (same model as main.py)
-    # Note: LangChain's ChatGoogleGenerativeAI doesn't support per-call key rotation,
-    # but we can create wrapper functions that rotate keys on failures
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-lite-preview-09-2025",
-        temperature=0.1,
-        api_key=api_key
-    )
-    
-    # Store API manager for potential future use (e.g., custom retry logic)
-    if api_manager:
-        # Attach API manager to LLM for reference (if needed for custom retry)
-        llm._api_manager = api_manager
-    
+
     # Define tools
     tools = [
         search_confluence_optimized,
@@ -398,8 +467,8 @@ def create_pm_agent(api_key: Optional[str] = None) -> AgentExecutor:
         fetch_schema_details,
         fetch_table_data
     ]
-    
-    # Agent prompt template (from main.py)
+
+    # Agent prompt template
     template = """You are an AI Assistant that helps the Product Managers to Search across multiple internal knowledge bases including Confluence, Slack, Docs, Zendesk, and Jira.
 
 Your available tools are:
@@ -442,17 +511,29 @@ Question: {input}
 Thought:{agent_scratchpad}"""
 
     prompt = PromptTemplate.from_template(template)
-    
-    # Create agent and executor
+
+    # If we have API manager, use retry wrapper
+    if api_manager:
+        logger.info("Creating RetryAgentExecutor with automatic API key rotation")
+        return RetryAgentExecutor(api_manager, tools, prompt)
+
+    # Otherwise, create standard executor with single key
+    logger.info("Creating standard AgentExecutor with single API key")
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash-lite-preview-09-2025",
+        temperature=0.1,
+        api_key=api_key
+    )
+
     agent = create_react_agent(llm, tools, prompt)
     agent_executor = AgentExecutor(
         agent=agent,
         tools=tools,
         handle_parsing_errors=True,
         verbose=True,
-        max_iterations=10  # Limit iterations for Streamlit
+        max_iterations=10
     )
-    
+
     return agent_executor
 
 

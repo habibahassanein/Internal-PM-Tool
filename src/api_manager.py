@@ -182,38 +182,50 @@ class GeminiAPIManager:
 
 def create_api_manager_from_env() -> GeminiAPIManager:
     """
-    Create API manager by loading keys from environment variables.
-    
+    Create API manager by loading keys from environment variables or Streamlit secrets.
+
     Looks for: GEMINI_API_KEY_1, GEMINI_API_KEY_2, etc.
     Falls back to: GEMINI_API_KEY
-    
+
     Returns:
         Configured GeminiAPIManager instance
     """
     import os
     from dotenv import load_dotenv
-    
+
     load_dotenv()
-    
+
+    # Helper function to get key from env or Streamlit secrets
+    def get_key(name: str) -> Optional[str]:
+        # Try Streamlit secrets first (if available)
+        try:
+            import streamlit as st
+            if name in st.secrets:
+                return st.secrets[name]
+        except (ImportError, FileNotFoundError, KeyError):
+            pass
+        # Fall back to environment variables
+        return os.getenv(name)
+
     # Collect all numbered keys
     keys = []
     i = 1
     while True:
-        key = os.getenv(f"GEMINI_API_KEY_{i}")
+        key = get_key(f"GEMINI_API_KEY_{i}")
         if not key:
             break
         keys.append(key)
         i += 1
-    
+
     # Fallback to single key
     if not keys:
-        single_key = os.getenv("GEMINI_API_KEY")
+        single_key = get_key("GEMINI_API_KEY")
         if single_key:
             keys.append(single_key)
-    
+
     if not keys:
-        raise ValueError("No GEMINI_API_KEY found in environment variables")
-    
+        raise ValueError("No GEMINI_API_KEY found in environment variables or Streamlit secrets")
+
     logger.info(f"Loaded {len(keys)} API key(s)")
     return GeminiAPIManager(api_keys=keys)
 

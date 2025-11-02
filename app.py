@@ -19,8 +19,8 @@ load_dotenv()
 
 # Page config (do this as early as possible)
 st.set_page_config(
-    page_title="Internal PM Tool",
-    page_icon="📊",
+    page_title="Internal PM Chat",
+    page_icon="💬",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -38,11 +38,6 @@ def _get_secret_or_env(name: str, default: str = "") -> str:
     return os.getenv(name, default)
 
 GEMINI_API_KEY = _get_secret_or_env("GEMINI_API_KEY")
-
-# =========================
-# Cached resources
-# =========================
-
 
 # =========================
 # CSS (consolidated)
@@ -63,53 +58,50 @@ st.markdown("""
         font-size: 1rem;
         margin-bottom: 1.25rem;
     }
-    .answer-box {
-        background: linear-gradient(135deg, #f0f2f6 0%, #e8f0fe 100%);
-        padding: 20px;
-        border-radius: 12px;
-        border-left: 5px solid #1f77b4;
-        margin: 12px 0;
-        line-height: 1.7;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.08);
-    }
     .citation-card {
         background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
         padding: 16px;
         border-radius: 10px;
-        border: 1px solid #e1e5e9;
-        margin: 10px 0;
-        box-shadow: 0 3px 6px rgba(0,0,0,0.08);
+        border-left: 4px solid #1f77b4;
+        margin: 8px 0;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
     .citation-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0,0,0,0.12);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        border-left-color: #0d5aa7;
     }
     .citation-title {
         font-weight: 700;
         color: #1f77b4;
         margin-bottom: 8px;
-        font-size: 15px;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
     }
     .citation-evidence {
         font-style: italic;
-        color: #333;
+        color: #444;
         margin-bottom: 8px;
-        background: #f8f9fa;
+        background: #f0f4f8;
         padding: 10px;
         border-radius: 6px;
         border-left: 3px solid #28a745;
         font-size: 13px;
-        line-height: 1.45;
+        line-height: 1.4;
         white-space: pre-wrap;
         word-break: break-word;
     }
-    .search-summary {
-        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-        padding: 14px;
-        border-radius: 8px;
-        border-left: 4px solid #2196f3;
-        margin: 10px 0;
+    .citation-card a {
+        color: #1f77b4;
+        text-decoration: none;
+        transition: color 0.2s ease;
+    }
+    .citation-card a:hover {
+        color: #0d5aa7;
+        text-decoration: underline;
     }
     .stButton>button {
         background-color: #1f77b4;
@@ -118,6 +110,11 @@ st.markdown("""
         padding: 0.5rem 1rem;
         font-weight: 600;
     }
+    /* Chat message styling */
+    .stChatMessage {
+        padding: 1rem;
+        margin-bottom: 0.5rem;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -125,251 +122,391 @@ st.markdown("""
 # Header with logo
 # =========================
 
-st.markdown('<div class="main-header">Internal PM Tool</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Comprehensive Search Across All Sources</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">Internal PM Chat Assistant</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Ask questions across Confluence, Slack, Docs, Zendesk, and Jira</div>', unsafe_allow_html=True)
 
 # =========================
 # Sidebar
 # =========================
 
 with st.sidebar:
-    st.header("Search Configuration")
-    
+    st.header("Chat Configuration")
+
     st.info("""
-    **Agent will intelligently search:**
+    **Agent searches across:**
     - 📚 Docs (Qdrant)
     - 💬 Slack Messages
     - 📖 Confluence Pages
     - 🎫 Zendesk Tickets (Incorta)
     - 📋 Jira Issues (Incorta)
     """)
-    
+
     st.markdown("---")
     st.subheader("System Info")
+
+    # Show API key rotation info if available
+    api_key_info = "Single API Key"
+    if st.session_state.get("agent_executor") is not None:
+        executor = st.session_state["agent_executor"]
+        # Check if it's a RetryAgentExecutor with api_manager
+        if hasattr(executor, 'api_manager'):
+            num_keys = len(executor.api_manager.api_keys)
+            current_idx = executor.api_manager.current_index
+            api_key_info = f"{num_keys} API Keys (Current: #{current_idx + 1})"
+
     st.info(f"""
-    **AI Model:** {LLM_NAME}  
-    **Vector DB:** Qdrant  
+    **AI Model:** {LLM_NAME}
+    **Vector DB:** Qdrant
     **Search:** Multi-source analysis
+    **API Keys:** {api_key_info}
     """)
-    
+
     # Cache statistics
     st.markdown("---")
     st.subheader("Cache Statistics")
     cache_stats = get_cache_manager().get_stats()
     st.metric("Active Cached Items", cache_stats["active_items"])
-    if st.button("Clear Cache"):
-        get_cache_manager().clear()
-        st.success("Cache cleared!")
-        st.rerun()
-    
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Clear Cache", use_container_width=True):
+            get_cache_manager().clear()
+            st.success("Cache cleared!")
+            st.rerun()
+
+    with col2:
+        if st.button("New Chat", use_container_width=True):
+            st.session_state["messages"] = []
+            st.session_state["chat_history"] = []
+            st.success("Chat reset!")
+            st.rerun()
+
     st.markdown("---")
     st.subheader("Usage Tips")
     st.markdown("""
-    - Ask specific questions using keyterms for best results
-    - Use natural language with technical keywords
-    - Results are ranked by relevance
+    - Ask follow-up questions naturally
+    - Reference previous answers with "it", "that", etc.
+    - Use specific keywords for best results
     - All sources searched automatically
-    - **Note**: This app works best with keyterm searching and is still under development
     """)
 
+    # Show conversation count
+    if "messages" in st.session_state and len(st.session_state["messages"]) > 0:
+        st.markdown("---")
+        st.metric("Messages in Chat", len(st.session_state["messages"]))
+
 # =========================
-# Session state helpers
+# Session state initialization
 # =========================
 
-if "search_query" not in st.session_state:
-    st.session_state["search_query"] = ""
+if "messages" not in st.session_state:
+    st.session_state["messages"] = []
+
+if "chat_history" not in st.session_state:
+    st.session_state["chat_history"] = []
+
 if "agent_executor" not in st.session_state:
     st.session_state["agent_executor"] = None
-
-# =========================
-# Main Search Form
-# =========================
-
-with st.form("search_form", clear_on_submit=False):
-    query = st.text_input(
-        "Search Query",
-        placeholder="Ask a question about Incorta, product features, or troubleshooting...",
-        key="search_query",
-        help="Search across all available sources automatically"
-    )
-    submitted = st.form_submit_button("Search All Sources", use_container_width=True)
 
 # =========================
 # Guardrails
 # =========================
 
 def _ensure_gemini_key_if_needed():
-    # Only needed if we are going to call the LLM (i.e., when there are any results)
     if not GEMINI_API_KEY:
         st.error("GEMINI_API_KEY is not set. Add it to Streamlit secrets or your environment.")
         st.stop()
 
 # =========================
-# Search Logic
+# Helper Functions
 # =========================
 
+def render_sources(sources):
+    """Render source citations as cards."""
+    if not sources:
+        return
 
-# =========================
-# Execute Search
-# =========================
+    st.markdown("**📚 Sources:**")
 
-if submitted and query:
+    # Deduplicate sources by URL/permalink
+    seen_urls = set()
+    unique_sources = []
+    for source in sources:
+        url = source.get("url") or source.get("permalink") or ""
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            unique_sources.append(source)
+        elif not url:
+            unique_sources.append(source)
+
+    # Display each source as a citation card
+    for i, source in enumerate(unique_sources[:8], 1):  # Limit to 8 citations for chat
+        # Determine source type
+        source_type = source.get("source", "unknown")
+        if "channel" in source or "permalink" in source:
+            source_type = "slack"
+        elif "confluence" in source.get("url", "").lower():
+            source_type = "confluence"
+        elif "zendesk" in source.get("url", "").lower():
+            source_type = "zendesk"
+        elif "jira" in source.get("url", "").lower():
+            source_type = "jira"
+        elif source.get("url", "").startswith("http"):
+            source_type = "knowledge_base"
+
+        # Source icon mapping
+        source_icons = {
+            "slack": "💬",
+            "confluence": "📖",
+            "zendesk": "🎫",
+            "jira": "📋",
+            "knowledge_base": "📚",
+            "unknown": "📄"
+        }
+
+        icon = source_icons.get(source_type, "📄")
+
+        # Build title
+        if source_type == "slack":
+            channel = source.get("channel", "unknown")
+            username = source.get("username", "unknown")
+            title = f"#{channel} - @{username}"
+        else:
+            title = source.get("title", "Untitled")
+
+        # Build URL
+        url = source.get("url") or source.get("permalink") or ""
+
+        # Build evidence/text snippet
+        evidence = source.get("text", "") or source.get("excerpt", "")
+        if len(evidence) > 200:
+            evidence = evidence[:200] + "..."
+
+        # Render citation card
+        st.markdown(f"""
+        <div class="citation-card">
+            <div class="citation-title">{icon} {i}. {html.escape(title)}</div>
+            {'<div class="citation-evidence">' + html.escape(evidence) + '</div>' if evidence else ''}
+            {'<small style="color: #666;">🔗 <a href="' + url + '" target="_blank">' + url[:50] + ('...' if len(url) > 50 else '') + '</a></small>' if url else ''}
+            <br><small style="color: #999;">Source: {source_type.replace('_', ' ').title()}</small>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+def build_conversation_context():
+    """Build conversation context string for agent."""
+    if not st.session_state["chat_history"]:
+        return ""
+
+    # Get last 6 messages (3 exchanges)
+    recent_history = st.session_state["chat_history"][-6:]
+    context_lines = []
+
+    for msg in recent_history:
+        role = "User" if msg["role"] == "user" else "Assistant"
+        content = msg["content"][:200]  # Truncate long messages
+        context_lines.append(f"{role}: {content}")
+
+    return "\n".join(context_lines)
+
+
+def process_query(query: str):
+    """Process a user query and return response with sources."""
     _ensure_gemini_key_if_needed()
-    
+
+    # Build conversation context
+    conversation_context = build_conversation_context()
+
+    # Enhanced query with context for follow-ups
+    enhanced_query = query
+    if conversation_context:
+        enhanced_query = f"Previous conversation:\n{conversation_context}\n\nCurrent question: {query}"
+
     # Check cache for agentic search results
     cache_filters = {
         "mode": "agentic",
-        "query": query
+        "query": query,
+        "context": conversation_context[:100]  # Include short context in cache key
     }
     cached_results = get_cached_search_results(query, cache_filters)
-    
+
     if cached_results:
-        final_answer = cached_results.get("final_answer")
-        agent_steps = cached_results.get("agent_steps", [])
-        tools_used = set(cached_results.get("tools_used", []))
-        st.info("📦 Using cached agentic search results")
-    else:
-        # Initialize agent executor if not exists (will use API manager with all keys if api_key=None)
-        if st.session_state["agent_executor"] is None:
-            with st.spinner("🤖 Initializing agent..."):
-                try:
-                    # Pass None to use API manager with all keys from environment (GEMINI_API_KEY_1, _2, _3, etc.)
-                    # Falls back to GEMINI_API_KEY if numbered keys not found
-                    st.session_state["agent_executor"] = create_pm_agent(api_key=None)
-                except Exception as e:
-                    st.error(f"Failed to initialize agent: {e}")
-                    st.stop()
-        
-        # Run agent
-        agent_executor = st.session_state["agent_executor"]
-        
-        # Collect agent execution details
-        final_answer = None
-        agent_steps = []
-        tools_used = set()
-        
-        with st.spinner("🤖 Agent is thinking and searching..."):
+        return {
+            "answer": cached_results.get("final_answer"),
+            "sources": cached_results.get("all_sources", []),
+            "tools_used": cached_results.get("tools_used", []),
+            "from_cache": True
+        }
+
+    # Initialize agent executor if not exists
+    if st.session_state["agent_executor"] is None:
+        with st.spinner("🤖 Initializing agent..."):
             try:
-                # Collect all chunks first (Streamlit doesn't handle incremental updates well in expanders)
-                all_chunks = []
-                for chunk in agent_executor.stream({"input": query}):
-                    all_chunks.append(chunk)
-                    
-                    # Collect step information
-                    if "actions" in chunk:
-                        for action in chunk["actions"]:
-                            step_info = {
-                                "type": "action",
-                                "tool": action.tool,
-                                "input": action.tool_input
-                            }
-                            agent_steps.append(step_info)
-                            tools_used.add(action.tool)
-                    
-                    if "steps" in chunk:
-                        for step in chunk["steps"]:
-                            step_info = {
-                                "type": "observation",
-                                "tool": step.action.tool,
-                                "observation": str(step.observation)
-                            }
-                            agent_steps.append(step_info)
-                    
-                    if "output" in chunk:
-                        final_answer = chunk["output"]
-                
-                # Cache agent execution results
-                try:
-                    cache_search_results(query, cache_filters, {
-                        "final_answer": final_answer,
-                        "agent_steps": agent_steps,
-                        "tools_used": list(tools_used),
-                        "mode": "agentic"
-                    })
-                except Exception as e:
-                    # Log but don't fail on cache errors
-                    pass
-            
+                st.session_state["agent_executor"] = create_pm_agent(api_key=None)
             except Exception as e:
-                st.error(f"Agent execution failed: {e}")
-                with st.expander("Error Details"):
-                    st.exception(e)
+                st.error(f"Failed to initialize agent: {e}")
                 st.stop()
-    
-    st.markdown("---")
-    st.subheader("Agent Execution")
-    
-    # Display final answer
-    if final_answer:
-        st.markdown('<div class="answer-box">', unsafe_allow_html=True)
-        st.markdown(final_answer)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.markdown("### Agent Summary")
-        st.markdown(f"""
-        <div class="search-summary">
-            <h4>Agent Analysis</h4>
-            <p><strong>Query:</strong> "{html.escape(query)}"</p>
-            <p><strong>Mode:</strong> Agentic Search</p>
-            <p><strong>Tools Used:</strong> {len(tools_used)} ({', '.join(sorted(tools_used))})</p>
-            <p><strong>Total Steps:</strong> {len(agent_steps)}</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Display agent thought process in expander
-        with st.expander("🔍 Agent Thought Process", expanded=False):
-            for i, step in enumerate(agent_steps, 1):
-                if step["type"] == "action":
-                    st.markdown(f"**Step {i}: Tool Call**")
-                    st.markdown(f"- **Tool:** `{step['tool']}`")
-                    st.code(str(step['input']), language=None)
-                elif step["type"] == "observation":
-                    st.markdown(f"**Step {i}: Tool Output**")
-                    st.markdown(f"- **Tool:** `{step['tool']}`")
-                    # Truncate long observations for display
-                    obs = str(step['observation'])
-                    if len(obs) > 1000:
-                        st.text(obs[:1000] + "\n... (truncated)")
-                    else:
-                        st.text(obs)
-                st.markdown("---")
-    else:
-        st.warning("Agent did not return a final answer.")
-        # Still show steps if available
-        if agent_steps:
-            with st.expander("🔍 Agent Thought Process", expanded=True):
-                for i, step in enumerate(agent_steps, 1):
-                    if step["type"] == "action":
-                        st.markdown(f"**Step {i}: Tool Call**")
-                        st.markdown(f"- **Tool:** `{step['tool']}`")
-                        st.code(str(step['input']), language=None)
-                    elif step["type"] == "observation":
-                        st.markdown(f"**Step {i}: Tool Output**")
-                        st.markdown(f"- **Tool:** `{step['tool']}`")
-                        obs = str(step['observation'])
-                        if len(obs) > 1000:
-                            st.text(obs[:1000] + "\n... (truncated)")
-                        else:
-                            st.text(obs)
-                    st.markdown("---")
+
+    # Run agent
+    agent_executor = st.session_state["agent_executor"]
+
+    # Collect agent execution details
+    final_answer = None
+    all_sources = []
+    tools_used = set()
+
+    try:
+        # Collect all chunks
+        all_chunks = []
+        for chunk in agent_executor.stream({"input": enhanced_query}):
+            all_chunks.append(chunk)
+
+            # Collect tool usage
+            if "actions" in chunk:
+                for action in chunk["actions"]:
+                    tools_used.add(action.tool)
+
+            if "steps" in chunk:
+                for step in chunk["steps"]:
+                    # Extract sources from observations
+                    try:
+                        obs_data = step.observation
+                        if isinstance(obs_data, list):
+                            for item in obs_data:
+                                if isinstance(item, dict) and any(k in item for k in ["url", "title", "text", "permalink"]):
+                                    all_sources.append(item)
+                    except:
+                        pass
+
+            if "output" in chunk:
+                final_answer = chunk["output"]
+
+        # Cache results
+        try:
+            cache_search_results(query, cache_filters, {
+                "final_answer": final_answer,
+                "all_sources": all_sources,
+                "tools_used": list(tools_used),
+                "mode": "agentic"
+            })
+        except Exception as e:
+            pass  # Don't fail on cache errors
+
+        return {
+            "answer": final_answer,
+            "sources": all_sources,
+            "tools_used": list(tools_used),
+            "from_cache": False
+        }
+
+    except Exception as e:
+        st.error(f"Agent execution failed: {e}")
+        return {
+            "answer": f"Sorry, I encountered an error: {str(e)}",
+            "sources": [],
+            "tools_used": [],
+            "from_cache": False
+        }
+
 
 # =========================
-# Example Queries
+# Display chat history
 # =========================
 
-if not query:
+for message in st.session_state["messages"]:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+        # Render sources if available
+        if message.get("sources"):
+            render_sources(message["sources"])
+
+        # Show cache indicator
+        if message.get("from_cache"):
+            st.caption("📦 From cache")
+
+# =========================
+# Chat input
+# =========================
+
+if prompt := st.chat_input("Ask a question about your PM tools and processes..."):
+    # Add user message to chat
+    st.session_state["messages"].append({"role": "user", "content": prompt})
+    st.session_state["chat_history"].append({"role": "user", "content": prompt})
+
+    # Display user message
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # Get agent response
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking and searching..."):
+            response = process_query(prompt)
+
+        # Display answer
+        st.markdown(response["answer"])
+
+        # Display sources
+        if response["sources"]:
+            render_sources(response["sources"])
+
+        # Show cache indicator
+        if response["from_cache"]:
+            st.caption("📦 From cache")
+
+        # Add assistant message to chat
+        st.session_state["messages"].append({
+            "role": "assistant",
+            "content": response["answer"],
+            "sources": response["sources"],
+            "from_cache": response["from_cache"]
+        })
+        st.session_state["chat_history"].append({
+            "role": "assistant",
+            "content": response["answer"]
+        })
+
+# =========================
+# Welcome message
+# =========================
+
+if len(st.session_state["messages"]) == 0:
     st.markdown("---")
-    st.subheader("Example Queries")
-    
+    st.markdown("### 👋 Welcome! Ask me anything about:")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown("""
+        **📚 Documentation**
+        - Product features
+        - Configuration guides
+        - Best practices
+        """)
+
+    with col2:
+        st.markdown("""
+        **🎫 Customer Issues**
+        - Zendesk tickets
+        - Common problems
+        - Support patterns
+        """)
+
+    with col3:
+        st.markdown("""
+        **📋 Development**
+        - Jira tickets
+        - Roadmap items
+        - Feature status
+        """)
+
+    st.markdown("---")
+    st.markdown("**Example questions:**")
     st.markdown("""
-    **Try these example queries:**
-    
-    🔐 How do I set up SAML authentication?  
-    📊 What are materialized views in Incorta?  
-    🐛 Troubleshooting data agent connection errors  
-    ⚡ How to optimize query performance?  
-    💬 Recent discussions about API issues  
-    📖 Documentation on deployment process  
+    - "What is SAML authentication in Incorta?"
+    - "Show me recent Zendesk tickets about performance issues"
+    - "What's the status of the new dashboard feature in Jira?"
+    - "How do I configure materialized views?"
     """)
 
 # =========================
@@ -378,8 +515,7 @@ if not query:
 
 st.markdown("---")
 st.markdown("""
-<div style="text-align: center; color: #666; padding: 1.25rem;">
-    <small>Internal PM Tool • Comprehensive Search Assistant • Powered by AI</small>
+<div style="text-align: center; color: #666; padding: 1rem;">
+    <small>Internal PM Chat • Conversational Search Assistant • Powered by AI</small>
 </div>
 """, unsafe_allow_html=True)
- 
