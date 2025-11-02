@@ -28,7 +28,7 @@ class GeminiAPIManager:
     def __init__(
         self, 
         api_keys: List[str], 
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-2.5-flash-lite-preview-09-2025",
         rotation_strategy: str = "round_robin"
     ):
         """
