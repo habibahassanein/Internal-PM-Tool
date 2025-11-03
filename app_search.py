@@ -26,7 +26,7 @@ st.set_page_config(
 )
 
 # Constants / Tunables
-LLM_NAME = "Gemini 2.5 Flash Lite Preview"
+LLM_NAME = "Gemini 2.0 Flash Experimental"
 
 # =========================
 # Secrets & Keys
