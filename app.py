@@ -396,6 +396,7 @@ def process_query(query: str):
     final_answer = None
     all_sources = []
     tools_used = set()
+    step_sources = []  # list of lists: sources per observation step
 
     try:
         # Collect all chunks
@@ -413,21 +414,59 @@ def process_query(query: str):
                     # Extract sources from observations
                     try:
                         obs_data = step.observation
+                        collected = []
                         if isinstance(obs_data, list):
                             for item in obs_data:
                                 if isinstance(item, dict) and any(k in item for k in ["url", "title", "text", "permalink"]):
                                     all_sources.append(item)
+                                    collected.append(item)
+                        if collected:
+                            step_sources.append(collected)
                     except:
                         pass
 
             if "output" in chunk:
                 final_answer = chunk["output"]
 
+        # Determine which sources were actually used
+        def normalize_url(u: str) -> str:
+            try:
+                return (u or "").strip()
+            except:
+                return u or ""
+
+        # Sources from the last few steps (most relevant for final answer)
+        recent_sources = []
+        for group in step_sources[-3:]:  # last 3 observation steps
+            recent_sources.extend(group)
+
+        # Also include sources explicitly mentioned in the final answer by URL substring
+        mentioned_sources = []
+        if isinstance(final_answer, str) and final_answer:
+            answer_lower = final_answer.lower()
+            for s in all_sources:
+                u = normalize_url(s.get("url") or s.get("permalink") or "").lower()
+                if u and u in answer_lower:
+                    mentioned_sources.append(s)
+
+        # Merge and deduplicate used sources
+        seen = set()
+        used_sources = []
+        for s in recent_sources + mentioned_sources:
+            key = (s.get("url") or s.get("permalink") or s.get("title") or "")
+            if key and key not in seen:
+                seen.add(key)
+                used_sources.append(s)
+
+        # Fallback: if nothing identified, use the deduped all_sources
+        if not used_sources:
+            used_sources = all_sources
+
         # Cache results
         try:
             cache_search_results(query, cache_filters, {
                 "final_answer": final_answer,
-                "all_sources": all_sources,
+                "all_sources": used_sources,
                 "tools_used": list(tools_used),
                 "mode": "agentic"
             })
@@ -436,7 +475,7 @@ def process_query(query: str):
 
         return {
             "answer": final_answer,
-            "sources": all_sources,
+            "sources": used_sources,
             "tools_used": list(tools_used),
             "from_cache": False
         }
