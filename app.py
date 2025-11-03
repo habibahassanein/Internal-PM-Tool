@@ -222,26 +222,20 @@ def _ensure_gemini_key_if_needed():
 # =========================
 
 def render_sources(sources):
-    """Render source citations as cards."""
+    """Render source citations as cards in a collapsible section, sorted by relevance."""
     if not sources:
         return
 
-    st.markdown("**📚 Sources:**")
-
-    # Deduplicate sources by URL/permalink
-    seen_urls = set()
-    unique_sources = []
-    for source in sources:
-        url = source.get("url") or source.get("permalink") or ""
-        if url and url not in seen_urls:
-            seen_urls.add(url)
-            unique_sources.append(source)
-        elif not url:
-            unique_sources.append(source)
-
-    # Display each source as a citation card
-    for i, source in enumerate(unique_sources[:8], 1):  # Limit to 8 citations for chat
-        # Determine source type
+    # Sort sources by relevance (score if available, then by source type priority)
+    def get_sort_key(source):
+        # Priority: 1. Score (higher is better), 2. Source type priority, 3. Original order
+        score = source.get("score", 0.0)
+        if isinstance(score, (int, float)):
+            score_value = float(score)
+        else:
+            score_value = 0.0
+        
+        # Source type priority (lower number = higher priority)
         source_type = source.get("source", "unknown")
         if "channel" in source or "permalink" in source:
             source_type = "slack"
@@ -253,44 +247,92 @@ def render_sources(sources):
             source_type = "jira"
         elif source.get("url", "").startswith("http"):
             source_type = "knowledge_base"
-
-        # Source icon mapping
-        source_icons = {
-            "slack": "💬",
-            "confluence": "📖",
-            "zendesk": "🎫",
-            "jira": "📋",
-            "knowledge_base": "📚",
-            "unknown": "📄"
+        
+        source_priority = {
+            "knowledge_base": 1,
+            "confluence": 2,
+            "slack": 3,
+            "jira": 4,
+            "zendesk": 5,
+            "unknown": 6
         }
-
-        icon = source_icons.get(source_type, "📄")
-
-        # Build title
-        if source_type == "slack":
-            channel = source.get("channel", "unknown")
-            username = source.get("username", "unknown")
-            title = f"#{channel} - @{username}"
-        else:
-            title = source.get("title", "Untitled")
-
-        # Build URL
+        
+        priority = source_priority.get(source_type, 6)
+        
+        # Return tuple for sorting: negative score (higher first), then priority
+        return (-score_value, priority)
+    
+    # Deduplicate sources by URL/permalink
+    seen_urls = set()
+    unique_sources = []
+    for idx, source in enumerate(sources):
         url = source.get("url") or source.get("permalink") or ""
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            unique_sources.append(source)
+        elif not url:
+            unique_sources.append(source)
+    
+    # Sort by relevance (score descending, then source type priority)
+    sorted_sources = sorted(unique_sources, key=get_sort_key)
+    
+    # Limit to top 8 sources
+    sorted_sources = sorted_sources[:8]
+    
+    # Display sources in collapsible expander
+    with st.expander(f"📚 Sources ({len(sorted_sources)})", expanded=False):
+        # Display each source as a citation card
+        for i, source in enumerate(sorted_sources, 1):
+            # Determine source type
+            source_type = source.get("source", "unknown")
+            if "channel" in source or "permalink" in source:
+                source_type = "slack"
+            elif "confluence" in source.get("url", "").lower():
+                source_type = "confluence"
+            elif "zendesk" in source.get("url", "").lower():
+                source_type = "zendesk"
+            elif "jira" in source.get("url", "").lower():
+                source_type = "jira"
+            elif source.get("url", "").startswith("http"):
+                source_type = "knowledge_base"
 
-        # Build evidence/text snippet
-        evidence = source.get("text", "") or source.get("excerpt", "")
-        if len(evidence) > 200:
-            evidence = evidence[:200] + "..."
+            # Source icon mapping
+            source_icons = {
+                "slack": "💬",
+                "confluence": "📖",
+                "zendesk": "🎫",
+                "jira": "📋",
+                "knowledge_base": "📚",
+                "unknown": "📄"
+            }
 
-        # Render citation card
-        st.markdown(f"""
-        <div class="citation-card">
-            <div class="citation-title">{icon} {i}. {html.escape(title)}</div>
-            {'<div class="citation-evidence">' + html.escape(evidence) + '</div>' if evidence else ''}
-            {'<small style="color: #666;">🔗 <a href="' + url + '" target="_blank">' + url[:50] + ('...' if len(url) > 50 else '') + '</a></small>' if url else ''}
-            <br><small style="color: #999;">Source: {source_type.replace('_', ' ').title()}</small>
-        </div>
-        """, unsafe_allow_html=True)
+            icon = source_icons.get(source_type, "📄")
+
+            # Build title
+            if source_type == "slack":
+                channel = source.get("channel", "unknown")
+                username = source.get("username", "unknown")
+                title = f"#{channel} - @{username}"
+            else:
+                title = source.get("title", "Untitled")
+
+            # Build URL
+            url = source.get("url") or source.get("permalink") or ""
+
+            # Build evidence/text snippet
+            evidence = source.get("text", "") or source.get("excerpt", "")
+            if len(evidence) > 200:
+                evidence = evidence[:200] + "..."
+
+            # Render citation card
+            st.markdown(f"""
+            <div class="citation-card">
+                <div class="citation-title">{icon} {i}. {html.escape(title)}</div>
+                {'<div class="citation-evidence">' + html.escape(evidence) + '</div>' if evidence else ''}
+                {'<small style="color: #666;">🔗 <a href="' + url + '" target="_blank">' + url[:50] + ('...' if len(url) > 50 else '') + '</a></small>' if url else ''}
+                <br><small style="color: #999;">Source: {source_type.replace('_', ' ').title()}</small>
+            </div>
+            """, unsafe_allow_html=True)
 
 
 def build_conversation_context():
