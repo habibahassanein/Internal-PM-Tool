@@ -162,7 +162,7 @@ def search_docs(query: str, limit: int = 5) -> List[dict]:
         # Format results
         formatted_results = []
         for r in search_result:
-            if r.score >= 0.25:  # Minimum cosine score threshold
+            if r.score >= 0.5:  # Minimum cosine score threshold (increased for better relevance)
                 formatted_results.append({
                     "title": r.payload.get("title", "") or "",
                     "url": r.payload.get("url", "") or "",

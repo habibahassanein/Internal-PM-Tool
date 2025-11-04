@@ -276,8 +276,10 @@ def render_sources(sources):
     # Sort by relevance (score descending, then source type priority)
     sorted_sources = sorted(unique_sources, key=get_sort_key)
     
-    # Limit to top 8 sources
-    sorted_sources = sorted_sources[:8]
+    # Limit to top sources dynamically - allow fewer if that's all we have
+    # Only limit if we have more than 10 sources
+    max_sources = min(len(sorted_sources), 10) if len(sorted_sources) > 10 else len(sorted_sources)
+    sorted_sources = sorted_sources[:max_sources]
     
     # Display sources in collapsible expander
     with st.expander(f"📚 Sources ({len(sorted_sources)})", expanded=False):
@@ -428,39 +430,101 @@ def process_query(query: str):
             if "output" in chunk:
                 final_answer = chunk["output"]
 
-        # Determine which sources were actually used
+        # Determine which sources were actually used in the answer
+        import re
+        
         def normalize_url(u: str) -> str:
             try:
-                return (u or "").strip()
+                return (u or "").strip().lower()
             except:
-                return u or ""
+                return (u or "").lower()
 
-        # Sources from the last few steps (most relevant for final answer)
-        recent_sources = []
-        for group in step_sources[-3:]:  # last 3 observation steps
-            recent_sources.extend(group)
+        def normalize_title(t: str) -> str:
+            try:
+                return (t or "").strip().lower()
+            except:
+                return (t or "").lower()
 
-        # Also include sources explicitly mentioned in the final answer by URL substring
+        # Extract keywords from the answer that might reference sources
         mentioned_sources = []
         if isinstance(final_answer, str) and final_answer:
             answer_lower = final_answer.lower()
+            answer_words = set(answer_lower.split())
+            
+            # Find sources that match by:
+            # 1. URL domain/partial match in answer
+            # 2. Title keywords in answer
+            # 3. Source-specific identifiers (ticket numbers, page titles, etc.)
             for s in all_sources:
-                u = normalize_url(s.get("url") or s.get("permalink") or "").lower()
-                if u and u in answer_lower:
-                    mentioned_sources.append(s)
+                url = normalize_url(s.get("url") or s.get("permalink") or "")
+                title = normalize_title(s.get("title") or "")
+                
+                # Check if URL domain or partial URL appears in answer
+                if url:
+                    # Extract domain or key parts
+                    url_parts = url.replace("https://", "").replace("http://", "").split("/")
+                    if url_parts and url_parts[0]:
+                        domain = url_parts[0].split(".")[0]  # e.g., "confluence" from "confluence.incorta.com"
+                        if domain in answer_lower or any(part in answer_lower for part in url_parts[:3] if part):
+                            mentioned_sources.append(s)
+                            continue
+                
+                # Check if title keywords appear in answer
+                if title and len(title) > 3:
+                    title_words = set(title.split())
+                    # If 2+ title words appear in answer, likely referenced
+                    common_words = title_words.intersection(answer_words)
+                    if len(common_words) >= 2:
+                        mentioned_sources.append(s)
+                        continue
+                
+                # Check for Slack channel/username mentions
+                if "channel" in s:
+                    channel = s.get("channel", "").lower()
+                    if channel and f"#{channel}" in answer_lower:
+                        mentioned_sources.append(s)
+                        continue
+                
+                # Check for ticket/issue numbers (Zendesk/Jira)
+                if "ticket" in answer_lower or "issue" in answer_lower:
+                    # Look for patterns like "PROD-123" or ticket IDs
+                    ticket_patterns = re.findall(r'[A-Z]+-\d+|\d{5,}', answer_lower)
+                    if ticket_patterns and url:
+                        # If answer mentions ticket patterns and we have a URL, likely related
+                        mentioned_sources.append(s)
+                        continue
 
-        # Merge and deduplicate used sources
-        seen = set()
-        used_sources = []
-        for s in recent_sources + mentioned_sources:
-            key = (s.get("url") or s.get("permalink") or s.get("title") or "")
-            if key and key not in seen:
-                seen.add(key)
-                used_sources.append(s)
+        # Use only sources that were actually mentioned/referenced
+        used_sources = mentioned_sources if mentioned_sources else []
 
-        # Fallback: if nothing identified, use the deduped all_sources
+        # If still no sources, try a more lenient approach: use only the LAST observation step
+        # (the one that directly led to the final answer)
+        if not used_sources and step_sources:
+            last_step_sources = step_sources[-1]
+            # Deduplicate
+            seen = set()
+            used_sources = []
+            for s in last_step_sources:
+                key = (s.get("url") or s.get("permalink") or s.get("title") or "")
+                if key and key not in seen:
+                    seen.add(key)
+                    used_sources.append(s)
+            
+        # Final fallback: if agent used tools, only show sources if we have very few
+        # (likely all were used) - otherwise show nothing rather than wrong sources
         if not used_sources:
-            used_sources = all_sources
+            if len(all_sources) <= 5:
+                # If we have 5 or fewer sources, likely all were used
+                seen = set()
+                used_sources = []
+                for s in all_sources:
+                    key = (s.get("url") or s.get("permalink") or s.get("title") or "")
+                    if key and key not in seen:
+                        seen.add(key)
+                        used_sources.append(s)
+            else:
+                # Too many sources, don't show any rather than showing wrong ones
+                used_sources = []
 
         # Cache results
         try:
