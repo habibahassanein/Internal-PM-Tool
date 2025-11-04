@@ -1,5 +1,6 @@
 import os
 import html
+import datetime
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -222,119 +223,190 @@ def _ensure_gemini_key_if_needed():
 # =========================
 
 def render_sources(sources):
-    """Render source citations as cards in a collapsible section, sorted by relevance."""
+    """Render source citations grouped by type in expandable tabs."""
     if not sources:
         return
-
-    # Sort sources by relevance (score if available, then by source type priority)
-    def get_sort_key(source):
-        # Priority: 1. Score (higher is better), 2. Source type priority, 3. Original order
-        score = source.get("score", 0.0)
-        if isinstance(score, (int, float)):
-            score_value = float(score)
-        else:
-            score_value = 0.0
-        
-        # Source type priority (lower number = higher priority)
-        source_type = source.get("source", "unknown")
-        if "channel" in source or "permalink" in source:
-            source_type = "slack"
-        elif "confluence" in source.get("url", "").lower():
-            source_type = "confluence"
-        elif "zendesk" in source.get("url", "").lower():
-            source_type = "zendesk"
-        elif "jira" in source.get("url", "").lower():
-            source_type = "jira"
-        elif source.get("url", "").startswith("http"):
-            source_type = "knowledge_base"
-        
-        source_priority = {
-            "knowledge_base": 1,
-            "confluence": 2,
-            "slack": 3,
-            "jira": 4,
-            "zendesk": 5,
-            "unknown": 6
-        }
-        
-        priority = source_priority.get(source_type, 6)
-        
-        # Return tuple for sorting: negative score (higher first), then priority
-        return (-score_value, priority)
     
-    # Deduplicate sources by URL/permalink
-    seen_urls = set()
-    unique_sources = []
-    for idx, source in enumerate(sources):
-        url = source.get("url") or source.get("permalink") or ""
-        if url and url not in seen_urls:
-            seen_urls.add(url)
-            unique_sources.append(source)
-        elif not url:
-            unique_sources.append(source)
-    
-    # Sort by relevance (score descending, then source type priority)
-    sorted_sources = sorted(unique_sources, key=get_sort_key)
-    
-    # Limit to top sources dynamically - allow fewer if that's all we have
-    # Only limit if we have more than 10 sources
-    max_sources = min(len(sorted_sources), 10) if len(sorted_sources) > 10 else len(sorted_sources)
-    sorted_sources = sorted_sources[:max_sources]
-    
-    # Display sources in collapsible expander
-    with st.expander(f"📚 Sources ({len(sorted_sources)})", expanded=False):
-        # Display each source as a citation card
-        for i, source in enumerate(sorted_sources, 1):
-            # Determine source type
-            source_type = source.get("source", "unknown")
-            if "channel" in source or "permalink" in source:
-                source_type = "slack"
-            elif "confluence" in source.get("url", "").lower():
-                source_type = "confluence"
-            elif "zendesk" in source.get("url", "").lower():
-                source_type = "zendesk"
-            elif "jira" in source.get("url", "").lower():
-                source_type = "jira"
-            elif source.get("url", "").startswith("http"):
-                source_type = "knowledge_base"
-
-            # Source icon mapping
-            source_icons = {
-                "slack": "💬",
-                "confluence": "📖",
-                "zendesk": "🎫",
-                "jira": "📋",
-                "knowledge_base": "📚",
-                "unknown": "📄"
-            }
-
-            icon = source_icons.get(source_type, "📄")
-
-            # Build title
-            if source_type == "slack":
-                channel = source.get("channel", "unknown")
-                username = source.get("username", "unknown")
-                title = f"#{channel} - @{username}"
+    def categorize_source(source):
+        """Categorize a source into one of the 5 groups."""
+        url = (source.get("url") or source.get("permalink") or "").lower()
+        source_field = source.get("source", "").lower()
+        
+        # 1. Check for Slack
+        if "channel" in source or "permalink" in source or source_field == "slack":
+            return "slack"
+        
+        # 2. Check for Confluence
+        if "confluence" in url or source_field == "confluence":
+            return "confluence"
+        
+        # 3. Check for knowledge_base and subcategorize by URL
+        if source_field == "knowledge_base" or (url.startswith("http") and source_field != "slack"):
+            # Pattern matching for knowledge_base URLs
+            if any(pattern in url for pattern in ["docs.incorta.com", "/docs/", "documentation"]):
+                return "incorta_docs"
+            elif any(pattern in url for pattern in ["community.incorta.com", "/community/"]):
+                return "incorta_community"
+            elif any(pattern in url for pattern in ["support.incorta.com", "/support/"]):
+                return "incorta_support"
             else:
-                title = source.get("title", "Untitled")
-
-            # Build URL
-            url = source.get("url") or source.get("permalink") or ""
-
-            # Build evidence/text snippet
-            evidence = source.get("text", "") or source.get("excerpt", "")
-            if len(evidence) > 200:
-                evidence = evidence[:200] + "..."
-
-            # Render citation card
-            st.markdown(f"""
-            <div class="citation-card">
-                <div class="citation-title">{icon} {i}. {html.escape(title)}</div>
-                {'<div class="citation-evidence">' + html.escape(evidence) + '</div>' if evidence else ''}
-                {'<small style="color: #666;">🔗 <a href="' + url + '" target="_blank">' + url[:50] + ('...' if len(url) > 50 else '') + '</a></small>' if url else ''}
-                <br><small style="color: #999;">Source: {source_type.replace('_', ' ').title()}</small>
-            </div>
-            """, unsafe_allow_html=True)
+                # Skip sources that don't match any pattern (per preference #2)
+                return None
+        
+        # 4. Check for Zendesk (support-related)
+        if "zendesk" in url or source_field == "zendesk":
+            return "incorta_support"
+        
+        # 5. Skip unknown sources (per preference #2)
+        return None
+    
+    def format_date(source, category):
+        """Format date from source based on category."""
+        if category == "slack":
+            # Slack has 'ts' (timestamp) or 'date' (formatted string)
+            if "ts" in source:
+                try:
+                    ts = float(source.get("ts"))
+                    dt = datetime.datetime.fromtimestamp(ts)
+                    return dt.strftime("%b %d, %Y")
+                except (ValueError, TypeError):
+                    pass
+            if "date" in source:
+                date_str = source.get("date", "")
+                if date_str and date_str != "Unknown date":
+                    try:
+                        # Try to parse if it's a formatted string
+                        dt = datetime.datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+                        return dt.strftime("%b %d, %Y")
+                    except (ValueError, TypeError):
+                        return date_str
+            return None
+        elif category == "confluence":
+            # Confluence has 'last_modified'
+            last_modified = source.get("last_modified", "")
+            if last_modified and last_modified != "Recent":
+                try:
+                    # Try to parse ISO format or other formats
+                    if isinstance(last_modified, str):
+                        # Try common date formats
+                        for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
+                            try:
+                                dt = datetime.datetime.strptime(last_modified.split(".")[0], fmt)
+                                return dt.strftime("%b %d, %Y")
+                            except ValueError:
+                                continue
+                        return last_modified
+                except (ValueError, TypeError):
+                    pass
+            return None
+        else:
+            # For docs, community, support - check for common date fields
+            for field in ["date", "last_modified", "updated", "created"]:
+                if field in source:
+                    date_val = source.get(field)
+                    if date_val:
+                        try:
+                            if isinstance(date_val, (int, float)):
+                                dt = datetime.datetime.fromtimestamp(date_val)
+                                return dt.strftime("%b %d, %Y")
+                            elif isinstance(date_val, str):
+                                for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
+                                    try:
+                                        dt = datetime.datetime.strptime(date_val.split(".")[0], fmt)
+                                        return dt.strftime("%b %d, %Y")
+                                    except ValueError:
+                                        continue
+                                return date_val
+                        except (ValueError, TypeError):
+                            pass
+            return None
+    
+    # Group sources by category
+    grouped_sources = {
+        "slack": [],
+        "confluence": [],
+        "incorta_docs": [],
+        "incorta_community": [],
+        "incorta_support": []
+    }
+    
+    # Deduplicate and group (skip sources that return None from categorization)
+    seen_urls = set()
+    for source in sources:
+        category = categorize_source(source)
+        if category is None:  # Skip sources that don't match any pattern
+            continue
+        
+        url = source.get("url") or source.get("permalink") or ""
+        if url and url in seen_urls:
+            continue
+        if url:
+            seen_urls.add(url)
+        
+        grouped_sources[category].append(source)
+    
+    # Sort each group by score (highest first) - per preference #3
+    def sort_by_score(sources):
+        return sorted(sources, key=lambda s: float(s.get("score", 0.0)), reverse=True)
+    
+    for category in grouped_sources:
+        grouped_sources[category] = sort_by_score(grouped_sources[category])
+    
+    # Category labels and icons
+    category_config = {
+        "slack": {"label": "Slack", "icon": "💬"},
+        "confluence": {"label": "Confluence", "icon": "📖"},
+        "incorta_docs": {"label": "Incorta Docs", "icon": "📚"},
+        "incorta_community": {"label": "Incorta Community", "icon": "👥"},
+        "incorta_support": {"label": "Incorta Support", "icon": "🎫"}
+    }
+    
+    # Calculate total sources (only from non-empty categories)
+    total_sources = sum(len(sources) for sources in grouped_sources.values())
+    if total_sources == 0:
+        return
+    
+    # Display grouped sources
+    st.markdown(f"### 📚 Sources ({total_sources})")
+    
+    # Create expandable sections for each category (only show non-empty ones - per preference #4)
+    for category, category_sources in grouped_sources.items():
+        if not category_sources:  # Hide empty categories
+            continue
+        
+        config = category_config[category]
+        count = len(category_sources)
+        
+        with st.expander(f"{config['icon']} {config['label']} ({count})", expanded=False):
+            for i, source in enumerate(category_sources, 1):
+                # Determine title
+                if category == "slack":
+                    channel = source.get("channel", "unknown")
+                    username = source.get("username", "unknown")
+                    title = f"#{channel} - @{username}"
+                else:
+                    title = source.get("title", "Untitled")
+                
+                # Build URL
+                url = source.get("url") or source.get("permalink") or ""
+                
+                # Format date
+                date_str = format_date(source, category)
+                date_display = f' <small style="color: #888;">• {date_str}</small>' if date_str else ""
+                
+                # Build evidence/text snippet
+                evidence = source.get("text", "") or source.get("excerpt", "")
+                if len(evidence) > 200:
+                    evidence = evidence[:200] + "..."
+                
+                # Render citation card
+                st.markdown(f"""
+                <div class="citation-card">
+                    <div class="citation-title">{config['icon']} {i}. {html.escape(title)}{date_display}</div>
+                    {'<div class="citation-evidence">' + html.escape(evidence) + '</div>' if evidence else ''}
+                    {'<small style="color: #666;">🔗 <a href="' + html.escape(url) + '" target="_blank">' + html.escape(url[:50] + ('...' if len(url) > 50 else '')) + '</a></small>' if url else ''}
+                </div>
+                """, unsafe_allow_html=True)
 
 
 def build_conversation_context():
