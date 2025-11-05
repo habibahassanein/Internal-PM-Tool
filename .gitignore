@@ -46,3 +46,4 @@ data/*.jsonl
 
 # Logs
 *.log
+.streamlit/secrets.toml
