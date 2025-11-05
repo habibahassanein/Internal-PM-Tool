@@ -186,9 +186,18 @@ class GoogleOAuthHandler:
     def login(self):
         """Display login interface and handle authentication flow."""
 
-        # Check if already authenticated
+        # Check if already authenticated in session
         if st.session_state.get("authenticated"):
             return True
+
+        # Try to restore authentication from database session
+        if "auth_session_id" in st.session_state:
+            from .session_manager import get_session_manager
+            session_mgr = get_session_manager()
+            if session_mgr.is_session_valid(st.session_state.auth_session_id):
+                # Session is still valid, restore authentication
+                st.session_state.authenticated = True
+                return True
 
         # Check for OAuth callback parameters
         query_params = st.query_params
@@ -205,10 +214,15 @@ class GoogleOAuthHandler:
                 st.session_state.user_info = user_info
                 st.session_state.authenticated = True
 
+                # Mark that we just authenticated
+                st.session_state.just_authenticated = True
+
                 # Clear query parameters
                 st.query_params.clear()
 
                 st.success(f"✅ Successfully authenticated as {user_info['name']} ({user_info['email']})")
+
+                # Force a clean reload
                 st.rerun()
 
             except Exception as e:
