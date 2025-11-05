@@ -14,7 +14,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import create_react_agent, AgentExecutor
 from langchain_core.prompts import PromptTemplate
 
-from ..handler.confluence_handler import search_confluence_pages
+from ..handler.confluence_handler import search_confluence
 from ..handler.slack_handler import search_slack_simplified
 from ..storage.cache_manager import get_cached_search_results, cache_search_results
 
@@ -65,7 +65,7 @@ def search_confluence_optimized(
     
     logger.info(f"Optimized Confluence search query: {search_query}, space_filter: {space_filter}")
     
-    return search_confluence_pages(search_query, max_results, space_filter)
+    return search_confluence(search_query, max_results, space_filter)
 
 
 @tool(
@@ -125,19 +125,8 @@ def search_slack_messages(
     return legacy_results
 
 
-@tool(
-    "search_docs",
-    description="""Search documents in Qdrant collection (Incorta Community, Docs & Support).
-    
-    Args:
-        query: Search query
-        limit: Number of results to return
-    
-    Returns:
-        List of search results with metadata"""
-)
-def search_docs(query: str, limit: int = 5) -> List[dict]:
-    """Search documents in Qdrant collection."""
+def _search_docs_impl(query: str, limit: int = 5) -> List[dict]:
+    """Implementation for searching documents in Qdrant collection."""
     from qdrant_client import QdrantClient
     from sentence_transformers import SentenceTransformer
     
@@ -145,9 +134,20 @@ def search_docs(query: str, limit: int = 5) -> List[dict]:
         return []
     
     try:
-        qdrant_url = os.getenv("QDRANT_URL")
+        # Support env vars and Streamlit secrets
+        qdrant_url = os.getenv("QDRANT_URL") or os.getenv("QDRANT_HOST")
         qdrant_api_key = os.getenv("QDRANT_API_KEY", "")
-        
+        if not qdrant_url:
+            try:
+                import streamlit as st  # optional
+                qdrant_url = st.secrets.get("QDRANT_URL", "") or st.secrets.get("QDRANT_HOST", "")
+                qdrant_api_key = st.secrets.get("QDRANT_API_KEY", qdrant_api_key)
+            except Exception:
+                pass
+        if not qdrant_url:
+            logger.warning("QDRANT_URL not set; knowledge base search disabled")
+            return []
+
         client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
         embedding_model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2", device="cpu")
         query_vector = embedding_model.encode([query])[0]
@@ -162,7 +162,7 @@ def search_docs(query: str, limit: int = 5) -> List[dict]:
         # Format results
         formatted_results = []
         for r in search_result:
-            if r.score >= 0.5:  # Minimum cosine score threshold (increased for better relevance)
+            if r.score >= 0.2:  # Lower threshold to avoid over-filtering
                 formatted_results.append({
                     "title": r.payload.get("title", "") or "",
                     "url": r.payload.get("url", "") or "",
@@ -175,6 +175,27 @@ def search_docs(query: str, limit: int = 5) -> List[dict]:
     except Exception as e:
         logger.error(f"Failed to search docs: {e}")
         return []
+
+
+@tool(
+    "search_docs",
+    description="""Search documents in Qdrant collection (Incorta Community, Docs & Support).
+    
+    Args:
+        query: Search query
+        limit: Number of results to return
+    
+    Returns:
+        List of search results with metadata"""
+)
+def search_docs(query: str, limit: int = 5) -> List[dict]:
+    """Tool wrapper for agent usage."""
+    return _search_docs_impl(query, limit)
+
+
+def search_docs_plain(query: str, limit: int = 5) -> List[dict]:
+    """Plain callable for programmatic use (no LangChain tool wrapping)."""
+    return _search_docs_impl(query, limit)
 
 
 @tool(

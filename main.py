@@ -2,7 +2,7 @@ from typing import List, Optional
 import logging
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
-from src.handler.confluence_handler import search_confluence_pages
+from src.handler.confluence_handler import search_confluence
 from src.handler.slack_handler import search_slack_simplified
 from dotenv import load_dotenv
 import os
@@ -73,7 +73,7 @@ def search_confluence_optimized(
     print(f"Optimized Confluence search query: {search_query}")
     print(f"Space filter: {space_filter}")
     
-    return search_confluence_pages(search_query, max_results, space_filter)
+    return search_confluence(search_query, max_results, space_filter)
 
 
 @tool(

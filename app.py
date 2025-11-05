@@ -1,666 +1,555 @@
-import os
-import html
+from __future__ import annotations
+
+import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List
+import json
+from datetime import datetime
 
 import streamlit as st
-from dotenv import load_dotenv
 
+from src.handler.confluence_handler import search_confluence_optimized
+from src.handler.gemini_handler import ask_gemini
+from src.handler.intent_analyzer import analyze_user_intent, validate_intent
+from src.handler.slack_handler import search_slack_simplified
 from src.storage.cache_manager import (
-    get_cached_search_results,
-    cache_search_results,
+    get_cached_search_results, cache_search_results,
+    get_cached_intent_analysis, cache_intent_analysis,
     get_cache_manager
 )
-from src.agent import create_pm_agent
+from src.agent.pm_agent import search_docs_plain, fetch_schema_details, fetch_table_data  # Integrated tools from other code
 
-# =========================
-# Environment & Config
-# =========================
-
-load_dotenv()
-
-# Page config (do this as early as possible)
-st.set_page_config(
-    page_title="Internal PM Chat",
-    page_icon="💬",
-    layout="wide",
-    initial_sidebar_state="expanded",
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
+logger = logging.getLogger(__name__)
 
-# Constants / Tunables
-LLM_NAME = "Gemini 2.0 Flash Experimental"
+# Page config
+st.set_page_config(page_title="Incorta AI Search Assistant", page_icon="incorta.png", layout="wide")
 
-# =========================
-# Secrets & Keys
-# =========================
+def _validate_env() -> List[str]:
+    """Return a list of missing required environment variables."""
+    missing = []
+    if not st.secrets.get("SLACK_USER_TOKEN"):
+        missing.append("SLACK_USER_TOKEN")
+    if not st.secrets.get("CONFLUENCE_URL"):
+        missing.append("CONFLUENCE_URL")
+    if not st.secrets.get("CONFLUENCE_EMAIL"):
+        missing.append("CONFLUENCE_EMAIL")
+    if not st.secrets.get("CONFLUENCE_API_TOKEN"):
+        missing.append("CONFLUENCE_API_TOKEN")
+    if not st.secrets.get("GEMINI_API_KEY"):
+        missing.append("GEMINI_API_KEY")
+    # Added from other code for new sources
+    if not st.secrets.get("QDRANT_URL"):
+        missing.append("QDRANT_URL")
+    if not st.secrets.get("INCORTA_ENV_URL"):
+        missing.append("INCORTA_ENV_URL")
+    if not st.secrets.get("INCORTA_TENANT"):
+        missing.append("INCORTA_TENANT")
+    if not st.secrets.get("INCORTA_USERNAME"):
+        missing.append("INCORTA_USERNAME")
+    if not st.secrets.get("INCORTA_PASSWORD"):
+        missing.append("INCORTA_PASSWORD")
+    return missing
 
-def _get_secret_or_env(name: str, default: str = "") -> str:
-    if name in st.secrets:
-        return st.secrets.get(name, default)
-    return os.getenv(name, default)
+def _clean_slack_text(text: str) -> str:
+    import re
+    
+    text = re.sub(r'<#[A-Z0-9]+\|([^>]+)>', r'#\1', text)
+    text = re.sub(r'<(https?://[^|>]+)\|([^>]+)>', r'\2 (\1)', text)
+    text = re.sub(r'<(https?://[^>]+)>', r'\1', text)
+    text = re.sub(r'<@[A-Z0-9]+\|([^>]+)>', r'@\1', text)
+    text = re.sub(r'<@([A-Z0-9]+)>', r'@unknown_user', text)
+    # Handle special mentions
+    text = text.replace('<!channel>', '@channel')
+    text = text.replace('<!here>', '@here')
+    text = text.replace('<!everyone>', '@everyone')
+    
+    return text
 
-GEMINI_API_KEY = _get_secret_or_env("GEMINI_API_KEY")
+def _format_context(slack_messages: List[dict], confluence_pages: List[dict], docs_results: List[dict], zendesk_results: dict, jira_results: dict) -> str:
+    parts: List[str] = []
 
-# =========================
-# CSS (consolidated)
-# =========================
+    if slack_messages:
+        parts.append("=== Slack Messages ===")
+        for i, m in enumerate(slack_messages, start=1):
+            timestamp = m.get('date', 'Unknown date')
+            meta = f"[# {m.get('channel','?')} | @{m.get('username','?')} | {timestamp}]"
+            clean_text = _clean_slack_text(m.get('text','').strip())
+            line = f"{i}. {meta}\n{clean_text}\nSource: {m.get('permalink','')}\n"
+            parts.append(line)
 
-st.markdown("""
-    <style>
-    .main-header {
-        font-size: 2.25rem;
-        font-weight: 800;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 0.5rem;
-    }
-    .subtitle {
-        text-align: center;
-        color: #444;
-        font-size: 1rem;
-        margin-bottom: 1.25rem;
-    }
-    .citation-card {
-        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-        padding: 16px;
-        border-radius: 10px;
-        border-left: 4px solid #1f77b4;
-        margin: 8px 0;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .citation-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-        border-left-color: #0d5aa7;
-    }
-    .citation-title {
-        font-weight: 700;
-        color: #1f77b4;
-        margin-bottom: 8px;
-        font-size: 14px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-    .citation-evidence {
-        font-style: italic;
-        color: #444;
-        margin-bottom: 8px;
-        background: #f0f4f8;
-        padding: 10px;
-        border-radius: 6px;
-        border-left: 3px solid #28a745;
-        font-size: 13px;
-        line-height: 1.4;
-        white-space: pre-wrap;
-        word-break: break-word;
-    }
-    .citation-card a {
-        color: #1f77b4;
-        text-decoration: none;
-        transition: color 0.2s ease;
-    }
-    .citation-card a:hover {
-        color: #0d5aa7;
-        text-decoration: underline;
-    }
-    .stButton>button {
-        background-color: #1f77b4;
-        color: white;
-        border-radius: 8px;
-        padding: 0.5rem 1rem;
-        font-weight: 600;
-    }
-    /* Chat message styling */
-    .stChatMessage {
-        padding: 1rem;
-        margin-bottom: 0.5rem;
-    }
-    </style>
-""", unsafe_allow_html=True)
+    if confluence_pages:
+        parts.append("=== Confluence Pages ===")
+        for i, p in enumerate(confluence_pages, start=1):
+            meta = f"[{p.get('space','?')} | last modified: {p.get('last_modified','?')}]"
+            excerpt = (p.get('excerpt') or '').strip()
+            line = f"{i}. {p.get('title','Untitled')} {meta}\nExcerpt: {excerpt}\nSource: {p.get('url','')}\n"
+            parts.append(line)
 
-# =========================
-# Header with logo
-# =========================
+    # Added from other code
+    if docs_results:
+        parts.append("=== Knowledge Base (Docs) ===")
+        for i, d in enumerate(docs_results, start=1):
+            meta = f"[Score: {d.get('score', 0.0):.2f}]"
+            text = (d.get('text') or '').strip()
+            line = f"{i}. {d.get('title','Untitled')} {meta}\nExcerpt: {text[:300]}\nSource: {d.get('url','')}\n"
+            parts.append(line)
 
-st.markdown('<div class="main-header">Internal PM Chat Assistant</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Ask questions across Confluence, Slack, Docs, Zendesk, and Jira</div>', unsafe_allow_html=True)
+    if zendesk_results and 'data' in zendesk_results:
+        parts.append("=== Zendesk Tickets ===")
+        data = zendesk_results['data']
+        columns = data.get('columns', [])
+        rows = data.get('rows', [])
+        if columns and rows:
+            table_str = "Columns: " + ", ".join(columns) + "\n"
+            for i, row in enumerate(rows, 1):
+                table_str += f"Row {i}: " + str(row) + "\n"
+            parts.append(table_str)
 
-# =========================
-# Sidebar
-# =========================
+    if jira_results and 'data' in jira_results:
+        parts.append("=== Jira Issues ===")
+        data = jira_results['data']
+        columns = data.get('columns', [])
+        rows = data.get('rows', [])
+        if columns and rows:
+            table_str = "Columns: " + ", ".join(columns) + "\n"
+            for i, row in enumerate(rows, 1):
+                table_str += f"Row {i}: " + str(row) + "\n"
+            parts.append(table_str)
 
-with st.sidebar:
-    st.header("Chat Configuration")
+    return "\n".join(parts)
 
-    st.info("""
-    **Agent searches across:**
-    - 📚 Docs (Qdrant)
-    - 💬 Slack Messages
-    - 📖 Confluence Pages
-    - 🎫 Zendesk Tickets (Incorta)
-    - 📋 Jira Issues (Incorta)
-    """)
 
-    st.markdown("---")
-    st.subheader("System Info")
+def _group_slack_by_channel_date(slack_results: List[dict]) -> dict:
+    grouped = {}
+    for m in slack_results or []:
+        channel = f"#{(m.get('channel') or 'unknown').lstrip('#')}"
+        date_str = m.get('date') or m.get('ts') or 'Unknown date'
+        date_key = date_str.split(' ')[0] if isinstance(date_str, str) else str(date_str)
+        text = (m.get('text') or '').strip().replace('\n', ' ')
+        if len(text) > 200:
+            text = text[:200] + '...'
+        grouped.setdefault(channel, {}).setdefault(date_key, []).append(text)
+    for channel in grouped:
+        grouped[channel] = dict(sorted(grouped[channel].items()))
+    return dict(sorted(grouped.items()))
 
-    # Show API key rotation info if available
-    api_key_info = "Single API Key"
-    if st.session_state.get("agent_executor") is not None:
-        executor = st.session_state["agent_executor"]
-        # Check if it's a RetryAgentExecutor with api_manager
-        if hasattr(executor, 'api_manager'):
-            num_keys = len(executor.api_manager.api_keys)
-            current_idx = executor.api_manager.current_index
-            api_key_info = f"{num_keys} API Keys (Current: #{current_idx + 1})"
 
-    st.info(f"""
-    **AI Model:** {LLM_NAME}
-    **Vector DB:** Qdrant
-    **Search:** Multi-source analysis
-    **API Keys:** {api_key_info}
-    """)
+def _group_confluence_by_space(pages: List[dict]) -> dict:
+    grouped = {"Confluence": {}}
+    buckets = {}
+    for p in pages or []:
+        parent = p.get('space') or 'General'
+        child = p.get('title') or 'Untitled'
+        buckets.setdefault(parent, set()).add(child)
+    for parent, children in buckets.items():
+        grouped["Confluence"][parent] = {
+            "title": parent,
+            "children": sorted(list(children))
+        }
+    return grouped
 
-    # Cache statistics
-    st.markdown("---")
-    st.subheader("Cache Statistics")
-    cache_stats = get_cache_manager().get_stats()
-    st.metric("Active Cached Items", cache_stats["active_items"])
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Clear Cache", use_container_width=True):
-            get_cache_manager().clear()
-            st.success("Cache cleared!")
-            st.rerun()
+def _format_grouped_response(summary: str, slack_results: List[dict], conf_results: List[dict]) -> str:
+    slack_grouped = _group_slack_by_channel_date(slack_results)
+    conf_grouped = _group_confluence_by_space(conf_results)
 
-    with col2:
-        if st.button("New Chat", use_container_width=True):
-            st.session_state["messages"] = []
-            st.session_state["chat_history"] = []
-            st.success("Chat reset!")
-            st.rerun()
+    lines = []
+    if summary and summary.strip():
+        lines.append(f"**Summary:** {summary.strip()}")
+        lines.append("")
 
-    st.markdown("---")
-    st.subheader("Usage Tips")
-    st.markdown("""
-    - Ask follow-up questions naturally
-    - Reference previous answers with "it", "that", etc.
-    - Use specific keywords for best results
-    - All sources searched automatically
-    """)
+    lines.append("**Slack Messages:**")
+    lines.append("")
+    if slack_grouped:
+        idx = 1
+        for channel, dates in slack_grouped.items():
+            lines.append(f"{idx}. **Channel: {channel}**")
+            for date_key, msgs in dates.items():
+                preview = ", ".join(msgs[:6])
+                lines.append(f"   - {date_key}: {preview}")
+            lines.append("")
+            idx += 1
+    else:
+        lines.append("(no Slack messages found)")
+        lines.append("")
 
-    # Show conversation count
-    if "messages" in st.session_state and len(st.session_state["messages"]) > 0:
-        st.markdown("---")
-        st.metric("Messages in Chat", len(st.session_state["messages"]))
+    lines.append("**Confluence Pages:**")
+    lines.append("")
+    if conf_grouped.get("Confluence"):
+        lines.append("3. **Confluence**")
+        for parent, info in conf_grouped["Confluence"].items():
+            lines.append(f"   - Parent Wiki: {parent}")
+            for child in info.get("children", [])[:10]:
+                lines.append(f"     - Child: {child}")
+        lines.append("")
+    else:
+        lines.append("(no Confluence pages found)")
 
-# =========================
-# Session state initialization
-# =========================
+    return "\n".join(lines)
 
-if "messages" not in st.session_state:
-    st.session_state["messages"] = []
 
-if "chat_history" not in st.session_state:
-    st.session_state["chat_history"] = []
-
-if "agent_executor" not in st.session_state:
-    st.session_state["agent_executor"] = None
-
-# =========================
-# Guardrails
-# =========================
-
-def _ensure_gemini_key_if_needed():
-    if not GEMINI_API_KEY:
-        st.error("GEMINI_API_KEY is not set. Add it to Streamlit secrets or your environment.")
-        st.stop()
-
-# =========================
-# Helper Functions
-# =========================
-
-def render_sources(sources):
-    """Render source citations as cards in a collapsible section, sorted by relevance."""
-    if not sources:
-        return
-
-    # Sort sources by relevance (score if available, then by source type priority)
-    def get_sort_key(source):
-        # Priority: 1. Score (higher is better), 2. Source type priority, 3. Original order
-        score = source.get("score", 0.0)
-        if isinstance(score, (int, float)):
-            score_value = float(score)
+def _render_sources(slack_messages: List[dict], confluence_pages: List[dict], docs_results: List[dict], zendesk_results: dict, jira_results: dict) -> None:
+    with st.expander(f"Slack Messages ({len(slack_messages)} found)", expanded=False):
+        if not slack_messages:
+            st.info("No Slack results found.")
         else:
-            score_value = 0.0
-        
-        # Source type priority (lower number = higher priority)
-        source_type = source.get("source", "unknown")
-        if "channel" in source or "permalink" in source:
-            source_type = "slack"
-        elif "confluence" in source.get("url", "").lower():
-            source_type = "confluence"
-        elif "zendesk" in source.get("url", "").lower():
-            source_type = "zendesk"
-        elif "jira" in source.get("url", "").lower():
-            source_type = "jira"
-        elif source.get("url", "").startswith("http"):
-            source_type = "knowledge_base"
-        
-        source_priority = {
-            "knowledge_base": 1,
-            "confluence": 2,
-            "slack": 3,
-            "jira": 4,
-            "zendesk": 5,
-            "unknown": 6
-        }
-        
-        priority = source_priority.get(source_type, 6)
-        
-        # Return tuple for sorting: negative score (higher first), then priority
-        return (-score_value, priority)
-    
-    # Deduplicate sources by URL/permalink
-    seen_urls = set()
-    unique_sources = []
-    for idx, source in enumerate(sources):
-        url = source.get("url") or source.get("permalink") or ""
-        if url and url not in seen_urls:
-            seen_urls.add(url)
-            unique_sources.append(source)
-        elif not url:
-            unique_sources.append(source)
-    
-    # Sort by relevance (score descending, then source type priority)
-    sorted_sources = sorted(unique_sources, key=get_sort_key)
-    
-    # Limit to top sources dynamically - allow fewer if that's all we have
-    # Only limit if we have more than 10 sources
-    max_sources = min(len(sorted_sources), 10) if len(sorted_sources) > 10 else len(sorted_sources)
-    sorted_sources = sorted_sources[:max_sources]
-    
-    # Display sources in collapsible expander
-    with st.expander(f"📚 Sources ({len(sorted_sources)})", expanded=False):
-        # Display each source as a citation card
-        for i, source in enumerate(sorted_sources, 1):
-            # Determine source type
-            source_type = source.get("source", "unknown")
-            if "channel" in source or "permalink" in source:
-                source_type = "slack"
-            elif "confluence" in source.get("url", "").lower():
-                source_type = "confluence"
-            elif "zendesk" in source.get("url", "").lower():
-                source_type = "zendesk"
-            elif "jira" in source.get("url", "").lower():
-                source_type = "jira"
-            elif source.get("url", "").startswith("http"):
-                source_type = "knowledge_base"
+            for idx, m in enumerate(slack_messages, 1):
+                channel = m.get('channel', 'Unknown')
+                username = m.get('username', 'Unknown')
+                timestamp = m.get('date', m.get('ts', ''))
+                text = _clean_slack_text(m.get('text', '').strip())
+                permalink = m.get('permalink', '')
+                import html
+                text_escaped = html.escape(text)
+                st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #4A90E2;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="font-weight: 600; color: #1f1f1f;">#{channel}</span>
+                        <span style="color: #666; font-size: 0.9em;">{timestamp}</span>
+                    </div>
+                    <div style="color: #4A90E2; font-size: 0.9em; margin-bottom: 10px;">@{username}</div>
+                    <div style="color: #1f1f1f; line-height: 1.6; margin-bottom: 10px; white-space: pre-wrap;">{text_escaped}</div>
+                    <a href="{permalink}" target="_blank" style="color: #4A90E2; text-decoration: none; font-size: 0.9em;">View in Slack</a>
+                </div>
+                """, unsafe_allow_html=True)
 
-            # Source icon mapping
-            source_icons = {
-                "slack": "💬",
-                "confluence": "📖",
-                "zendesk": "🎫",
-                "jira": "📋",
-                "knowledge_base": "📚",
-                "unknown": "📄"
-            }
+    with st.expander(f"Confluence Pages ({len(confluence_pages)} found)", expanded=False):
+        if not confluence_pages:
+            st.info("No Confluence results found.")
+        else:
+            for idx, p in enumerate(confluence_pages, 1):
+                title = p.get('title', 'Untitled')
+                space = p.get('space', 'Unknown')
+                last_modified = p.get('last_modified', 'Unknown')
+                excerpt = (p.get('excerpt') or '').strip()
+                url = p.get('url', '')
+                score = p.get('score', 0.0)
+                import re
+                cleaned_excerpt = re.sub(r'@@@hl@@@(.*?)@@@endhl@@@', r'\1', excerpt)
+                cleaned_excerpt = re.sub(r'<[^>]+>', '', cleaned_excerpt)
+                cleaned_excerpt = cleaned_excerpt.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+                if len(cleaned_excerpt) > 300:
+                    cleaned_excerpt = cleaned_excerpt[:300] + '...'
+                st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #6B46C1;">
+                    <div style="font-weight: 600; color: #1f1f1f; font-size: 1.1em; margin-bottom: 8px;">{title}</div>
+                    <div style="display: flex; gap: 15px; margin-bottom: 10px; font-size: 0.9em;">
+                        <span style="color: #6B46C1; font-weight: 500;">{space}</span>
+                        <span style="color: #666;">{last_modified}</span>
+                        <span style="color: #888;">Score: {score:.2f}</span>
+                    </div>
+                    <div style="color: #444; line-height: 1.6; margin-bottom: 10px; font-style: italic;">{cleaned_excerpt}</div>
+                    <a href="{url}" target="_blank" style="color: #6B46C1; text-decoration: none; font-size: 0.9em;">Open Page</a>
+                </div>
+                """, unsafe_allow_html=True)
 
-            icon = source_icons.get(source_type, "📄")
+    # Added render for new sources
+    with st.expander(f"Knowledge Base Docs ({len(docs_results)} found)", expanded=False):
+        if not docs_results:
+            st.info("No docs results found.")
+        else:
+            for idx, d in enumerate(docs_results, 1):
+                title = d.get('title', 'Untitled')
+                url = d.get('url', '')
+                text = (d.get('text') or '').strip()
+                score = d.get('score', 0.0)
+                if len(text) > 300:
+                    text = text[:300] + '...'
+                st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #28a745;">
+                    <div style="font-weight: 600; color: #1f1f1f; font-size: 1.1em; margin-bottom: 8px;">{title}</div>
+                    <div style="color: #666; font-size: 0.9em; margin-bottom: 10px;">Score: {score:.2f}</div>
+                    <div style="color: #444; line-height: 1.6; margin-bottom: 10px;">{text}</div>
+                    <a href="{url}" target="_blank" style="color: #28a745; text-decoration: none; font-size: 0.9em;">Open Document</a>
+                </div>
+                """, unsafe_allow_html=True)
 
-            # Build title
-            if source_type == "slack":
-                channel = source.get("channel", "unknown")
-                username = source.get("username", "unknown")
-                title = f"#{channel} - @{username}"
-            else:
-                title = source.get("title", "Untitled")
+    with st.expander(f"Zendesk Tickets (Results found)", expanded=False):
+        if not zendesk_results or 'data' not in zendesk_results:
+            st.info("No Zendesk results found.")
+        else:
+            data = zendesk_results['data']
+            columns = data.get('columns', [])
+            rows = data.get('rows', [])
+            if columns and rows:
+                st.table({"Columns": columns, "Rows": rows})
 
-            # Build URL
-            url = source.get("url") or source.get("permalink") or ""
+    with st.expander(f"Jira Issues (Results found)", expanded=False):
+        if not jira_results or 'data' not in jira_results:
+            st.info("No Jira results found.")
+        else:
+            data = jira_results['data']
+            columns = data.get('columns', [])
+            rows = data.get('rows', [])
+            if columns and rows:
+                st.table({"Columns": columns, "Rows": rows})
 
-            # Build evidence/text snippet
-            evidence = source.get("text", "") or source.get("excerpt", "")
-            if len(evidence) > 200:
-                evidence = evidence[:200] + "..."
-
-            # Render citation card
-            st.markdown(f"""
-            <div class="citation-card">
-                <div class="citation-title">{icon} {i}. {html.escape(title)}</div>
-                {'<div class="citation-evidence">' + html.escape(evidence) + '</div>' if evidence else ''}
-                {'<small style="color: #666;">🔗 <a href="' + url + '" target="_blank">' + url[:50] + ('...' if len(url) > 50 else '') + '</a></small>' if url else ''}
-                <br><small style="color: #999;">Source: {source_type.replace('_', ' ').title()}</small>
-            </div>
-            """, unsafe_allow_html=True)
-
-
-def build_conversation_context():
-    """Build conversation context string for agent."""
-    if not st.session_state["chat_history"]:
+def generate_sql_for_schema(schema_name: str, query: str) -> str:
+    schema_details = fetch_schema_details(schema_name)
+    if 'error' in schema_details:
         return ""
+    
+    schema_json = json.dumps(schema_details, indent=2)
+    
+    sql_prompt = f"""
+    You are a SQL query generator for Incorta schemas.
+    Schema details: {schema_json}
+    
+    User query: {query}
+    
+    Generate a valid Spark SQL query to answer the query.
+    Use the schema tables and columns appropriately.
+    Return ONLY the SQL query, no explanations.
+    """
+    
+    sql_response = ask_gemini(sql_prompt, "")
+    return sql_response.strip()
 
-    # Get last 6 messages (3 exchanges)
-    recent_history = st.session_state["chat_history"][-6:]
-    context_lines = []
+def main() -> None:
+    st.title("Incorta AI Search Assistant Tool")
+    st.caption("Searches Slack, Confluence, Docs, Zendesk, Jira, then asks Gemini to synthesize an answer with sources.")
 
-    for msg in recent_history:
-        role = "User" if msg["role"] == "user" else "Assistant"
-        content = msg["content"][:200]  # Truncate long messages
-        context_lines.append(f"{role}: {content}")
+    missing = _validate_env()
+    if missing:
+        st.warning("Missing environment variables: " + ", ".join(missing) + ". Set them to enable full functionality.")
 
-    return "\n".join(context_lines)
+    if "search_history" not in st.session_state:
+        st.session_state["search_history"] = []
 
-
-def process_query(query: str):
-    """Process a user query and return response with sources."""
-    _ensure_gemini_key_if_needed()
-
-    # Build conversation context
-    conversation_context = build_conversation_context()
-
-    # Enhanced query with context for follow-ups
-    enhanced_query = query
-    if conversation_context:
-        enhanced_query = f"Previous conversation:\n{conversation_context}\n\nCurrent question: {query}"
-
-    # Check cache for agentic search results
-    cache_filters = {
-        "mode": "agentic",
-        "query": query,
-        "context": conversation_context[:100]  # Include short context in cache key
-    }
-    cached_results = get_cached_search_results(query, cache_filters)
-
-    if cached_results:
-        return {
-            "answer": cached_results.get("final_answer"),
-            "sources": cached_results.get("all_sources", []),
-            "tools_used": cached_results.get("tools_used", []),
-            "from_cache": True
-        }
-
-    # Initialize agent executor if not exists
-    if st.session_state["agent_executor"] is None:
-        with st.spinner("🤖 Initializing agent..."):
-            try:
-                st.session_state["agent_executor"] = create_pm_agent(api_key=None)
-            except Exception as e:
-                st.error(f"Failed to initialize agent: {e}")
-                st.stop()
-
-    # Run agent
-    agent_executor = st.session_state["agent_executor"]
-
-    # Collect agent execution details
-    final_answer = None
-    all_sources = []
-    tools_used = set()
-    step_sources = []  # list of lists: sources per observation step
-
-    try:
-        # Collect all chunks
-        all_chunks = []
-        for chunk in agent_executor.stream({"input": enhanced_query}):
-            all_chunks.append(chunk)
-
-            # Collect tool usage
-            if "actions" in chunk:
-                for action in chunk["actions"]:
-                    tools_used.add(action.tool)
-
-            if "steps" in chunk:
-                for step in chunk["steps"]:
-                    # Extract sources from observations
-                    try:
-                        obs_data = step.observation
-                        collected = []
-                        if isinstance(obs_data, list):
-                            for item in obs_data:
-                                if isinstance(item, dict) and any(k in item for k in ["url", "title", "text", "permalink"]):
-                                    all_sources.append(item)
-                                    collected.append(item)
-                        if collected:
-                            step_sources.append(collected)
-                    except:
-                        pass
-
-            if "output" in chunk:
-                final_answer = chunk["output"]
-
-        # Determine which sources were actually used in the answer
-        import re
+    with st.sidebar:
+        st.markdown("<h1 style=\"margin-top:0; margin-bottom:0.25rem; font-size:1.6rem;\">Search Options</h1>", unsafe_allow_html=True)
         
-        def normalize_url(u: str) -> str:
-            try:
-                return (u or "").strip().lower()
-            except:
-                return (u or "").lower()
+        st.divider()
+        
+        st.subheader("Filters")
+        channel_hint = st.text_input("Slack channel", value=st.session_state.get("channel_hint", ""), 
+                                     key="channel_hint", placeholder="e.g., general, engineering")
+        space_hint = st.text_input("Confluence space", value=st.session_state.get("space_hint", ""), 
+                                   key="space_hint", placeholder="e.g., PROJ, DOCS")
 
-        def normalize_title(t: str) -> str:
-            try:
-                return (t or "").strip().lower()
-            except:
-                return (t or "").lower()
+        st.divider()
+        auto_refresh = True
+        
+    if "chat_messages" not in st.session_state:
+        st.session_state["chat_messages"] = [
+            {"role": "assistant", "content": "Hi! Ask me anything. I'll search Slack, Confluence, Docs, Zendesk, Jira, then summarize with sources."}
+        ]
+    
+    if "context" not in st.session_state:
+        st.session_state["context"] = None
+    if "slack_results" not in st.session_state:
+        st.session_state["slack_results"] = []
+    if "conf_results" not in st.session_state:
+        st.session_state["conf_results"] = []
+    if "filters" not in st.session_state:
+        st.session_state["filters"] = {}
 
-        # Extract keywords from the answer that might reference sources
-        mentioned_sources = []
-        if isinstance(final_answer, str) and final_answer:
-            answer_lower = final_answer.lower()
-            answer_words = set(answer_lower.split())
+    for msg in st.session_state["chat_messages"]:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    user_input = st.chat_input("Type your question")
+
+    if user_input:
+        st.session_state["chat_messages"].append({"role": "user", "content": user_input})
+        with st.chat_message("user"):
+            st.write(user_input)
+
+        with st.chat_message("assistant"):
+            current_filters = {
+                "channel_hint": (channel_hint or "").strip(),
+                "space_hint": (space_hint or "").strip(),
+            }
+            stored_filters = st.session_state.get("filters", {})
+            filters_changed = current_filters != stored_filters
+
+            intent_type = ""
+            if "intent_data" in st.session_state:
+                intent_type = st.session_state["intent_data"].get("intent", "")
             
-            # Find sources that match by:
-            # 1. URL domain/partial match in answer
-            # 2. Title keywords in answer
-            # 3. Source-specific identifiers (ticket numbers, page titles, etc.)
-            for s in all_sources:
-                url = normalize_url(s.get("url") or s.get("permalink") or "")
-                title = normalize_title(s.get("title") or "")
-                
-                # Check if URL domain or partial URL appears in answer
-                if url:
-                    # Extract domain or key parts
-                    url_parts = url.replace("https://", "").replace("http://", "").split("/")
-                    if url_parts and url_parts[0]:
-                        domain = url_parts[0].split(".")[0]  # e.g., "confluence" from "confluence.incorta.com"
-                        if domain in answer_lower or any(part in answer_lower for part in url_parts[:3] if part):
-                            mentioned_sources.append(s)
-                            continue
-                
-                # Check if title keywords appear in answer
-                if title and len(title) > 3:
-                    title_words = set(title.split())
-                    # If 2+ title words appear in answer, likely referenced
-                    common_words = title_words.intersection(answer_words)
-                    if len(common_words) >= 2:
-                        mentioned_sources.append(s)
-                        continue
-                
-                # Check for Slack channel/username mentions
-                if "channel" in s:
-                    channel = s.get("channel", "").lower()
-                    if channel and f"#{channel}" in answer_lower:
-                        mentioned_sources.append(s)
-                        continue
-                
-                # Check for ticket/issue numbers (Zendesk/Jira)
-                if "ticket" in answer_lower or "issue" in answer_lower:
-                    # Look for patterns like "PROD-123" or ticket IDs
-                    ticket_patterns = re.findall(r'[A-Z]+-\d+|\d{5,}', answer_lower)
-                    if ticket_patterns and url:
-                        # If answer mentions ticket patterns and we have a URL, likely related
-                        mentioned_sources.append(s)
-                        continue
+            reuse_context = (not auto_refresh) and (not filters_changed) and bool(st.session_state.get("context")) and (intent_type != "latest_message")
 
-        # Use only sources that were actually mentioned/referenced
-        used_sources = mentioned_sources if mentioned_sources else []
-
-        # If still no sources, try a more lenient approach: use only the LAST observation step
-        # (the one that directly led to the final answer)
-        if not used_sources and step_sources:
-            last_step_sources = step_sources[-1]
-            # Deduplicate
-            seen = set()
-            used_sources = []
-            for s in last_step_sources:
-                key = (s.get("url") or s.get("permalink") or s.get("title") or "")
-                if key and key not in seen:
-                    seen.add(key)
-                    used_sources.append(s)
-            
-        # Final fallback: if agent used tools, only show sources if we have very few
-        # (likely all were used) - otherwise show nothing rather than wrong sources
-        if not used_sources:
-            if len(all_sources) <= 5:
-                # If we have 5 or fewer sources, likely all were used
-                seen = set()
-                used_sources = []
-                for s in all_sources:
-                    key = (s.get("url") or s.get("permalink") or s.get("title") or "")
-                    if key and key not in seen:
-                        seen.add(key)
-                        used_sources.append(s)
+            if reuse_context:
+                context = st.session_state.get("context") or ""
+                slack_results = st.session_state.get("slack_results") or []
+                conf_results = st.session_state.get("conf_results") or []
+                docs_results = st.session_state.get("docs_results") or []
+                zendesk_results = st.session_state.get("zendesk_results") or {}
+                jira_results = st.session_state.get("jira_results") or {}
             else:
-                # Too many sources, don't show any rather than showing wrong ones
-                used_sources = []
+                with st.spinner("Analyzing query and retrieving sources..."):
+                    cache_filters = {
+                        "channel_hint": (channel_hint or "").strip(),
+                        "space_hint": (space_hint or "").strip(),
+                    }
+                    
+                    intent_data = get_cached_intent_analysis(user_input, cache_filters)
+                    
+                    if not intent_data:
+                        intent_data = analyze_user_intent(user_input)
+                        intent_data = validate_intent(intent_data)
+                        cache_intent_analysis(user_input, cache_filters, intent_data)
+                    
+                    if channel_hint and channel_hint.strip():
+                        intent_data["slack_params"]["channels"] = channel_hint.strip()
+                    if space_hint and space_hint.strip():
+                        intent_data["confluence_params"]["spaces"] = space_hint.strip()
 
-        # Cache results
-        try:
-            cache_search_results(query, cache_filters, {
-                "final_answer": final_answer,
-                "all_sources": used_sources,
-                "tools_used": list(tools_used),
-                "mode": "agentic"
-            })
-        except Exception as e:
-            pass  # Don't fail on cache errors
+                    logger.info(f"Intent analysis result: {intent_data}")
+                    
+                    slack_results: List[dict] = []
+                    conf_results: List[dict] = []
+                    docs_results: List[dict] = []
+                    zendesk_results: dict = {}
+                    jira_results: dict = {}
 
-        return {
-            "answer": final_answer,
-            "sources": used_sources,
-            "tools_used": list(tools_used),
-            "from_cache": False
-        }
+                    data_sources = intent_data.get("data_sources", ["slack", "confluence"])
 
-    except Exception as e:
-        st.error(f"Agent execution failed: {e}")
-        return {
-            "answer": f"Sorry, I encountered an error: {str(e)}",
-            "sources": [],
-            "tools_used": [],
-            "from_cache": False
-        }
+                    with ThreadPoolExecutor(max_workers=5) as pool:
+                        futures = {}
 
+                        if "slack" in data_sources:
+                            futures["slack"] = pool.submit(
+                                search_slack_simplified,
+                                user_input,
+                                intent_data,
+                                15
+                            )
+                        
+                        if "confluence" in data_sources:
+                            futures["confluence"] = pool.submit(
+                                search_confluence_optimized,
+                                intent_data,
+                                user_input
+                            )
+                        
+                        # Knowledge base (Docs) search: enable for doc-style queries even if not explicitly requested
+                        def _should_search_docs(query: str) -> bool:
+                            q = (query or "").lower()
+                            doc_terms = [
+                                "how to", "install", "installation", "setup", "configure",
+                                "documentation", "doc", "guide", "on prem", "on-prem"
+                            ]
+                            return any(t in q for t in doc_terms)
 
-# =========================
-# Display chat history
-# =========================
+                        if any(s in data_sources for s in ["docs", "knowledge_base"]) or _should_search_docs(user_input):
+                            futures["docs"] = pool.submit(search_docs_plain, user_input, 5)
+                        
+                        if "zendesk" in data_sources:
+                            zendesk_schema = fetch_schema_details("ZendeskTickets")
+                            zendesk_sql = generate_sql_for_schema("ZendeskTickets", user_input)
+                            if zendesk_sql:
+                                futures["zendesk"] = pool.submit(
+                                    fetch_table_data,
+                                    zendesk_sql
+                                )
+                        
+                        if "jira" in data_sources:
+                            jira_schema = fetch_schema_details("Jira_F")
+                            jira_sql = generate_sql_for_schema("Jira_F", user_input)
+                            if jira_sql:
+                                futures["jira"] = pool.submit(
+                                    fetch_table_data,
+                                    jira_sql
+                                )
+                        
+                        for source, future in futures.items():
+                            try:
+                                if source == "slack":
+                                    slack_results = future.result(timeout=75)
+                                elif source == "confluence":
+                                    conf_results = future.result(timeout=60)
+                                elif source == "docs":
+                                    docs_results = future.result(timeout=30)
+                                elif source == "zendesk":
+                                    zendesk_results = future.result(timeout=60)
+                                elif source == "jira":
+                                    jira_results = future.result(timeout=60)
+                            except Exception as e:
+                                logger.error(f"{source.title()} search failed: {e}")
+                                if "timeout" in str(e).lower():
+                                    st.warning(f"⏱️ {source.title()} search timed out.")
+                                else:
+                                    st.warning(f"⚠️ {source.title()} search encountered an issue: {str(e)}")
 
-for message in st.session_state["messages"]:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+                    if not slack_results and not conf_results and not docs_results and not zendesk_results and not jira_results:
+                        nores = "No results found in any source. Try adjusting your query or filters."
+                        st.write(nores)
+                        st.session_state["chat_messages"].append({"role": "assistant", "content": nores})
+                        return
+                    
+                    context = _format_context(slack_results, conf_results, docs_results, zendesk_results, jira_results)
+                    st.session_state["context"] = context
+                    st.session_state["slack_results"] = slack_results
+                    st.session_state["conf_results"] = conf_results
+                    st.session_state["docs_results"] = docs_results
+                    st.session_state["zendesk_results"] = zendesk_results
+                    st.session_state["jira_results"] = jira_results
+                    st.session_state["filters"] = current_filters
+                    st.session_state["intent_data"] = intent_data
 
-        # Render sources if available
-        if message.get("sources"):
-            render_sources(message["sources"])
+            preface = ("Previous conversation context (use for continuity):\n" + "\n".join([f"{prefix} {m['content']}" for m in st.session_state["chat_messages"][-6:] if (prefix := "User:" if m["role"] == "user" else "Assistant:")]) + "\n\n") if st.session_state["chat_messages"][-6:] else ""
 
-        # Show cache indicator
-        if message.get("from_cache"):
-            st.caption("📦 From cache")
+            with st.spinner("Thinking..."):
+                # Generate concise summary only
+                try:
+                    context_for_summary = context or _format_context(slack_results, conf_results, docs_results, zendesk_results, jira_results)
+                    summary_prompt = (
+                        "Write a concise 2-4 sentence summary answering the user's question directly. "
+                        "Include what the feature/release is, who is responsible (if available), current status, and key updates.\n\n"
+                        f"User question: {user_input}\n\nContext:\n{context_for_summary}"
+                    )
+                    summary_text = ask_gemini(summary_prompt, "") or ""
+                except Exception:
+                    summary_text = ""
 
-# =========================
-# Chat input
-# =========================
+            grouped_output = _format_grouped_response(
+                summary_text,
+                slack_results,
+                conf_results,
+            )
 
-if prompt := st.chat_input("Ask a question about your PM tools and processes..."):
-    # Add user message to chat
-    st.session_state["messages"].append({"role": "user", "content": prompt})
-    st.session_state["chat_history"].append({"role": "user", "content": prompt})
+            st.markdown(grouped_output)
 
-    # Display user message
-    with st.chat_message("user"):
-        st.markdown(prompt)
+            # Agent Trace: log to terminal instead of UI
+            try:
+                strategies = [r.get('strategy') for r in (slack_results or []) if r.get('strategy')]
+                strat_counts = {}
+                for s in strategies:
+                    strat_counts[s] = strat_counts.get(s, 0) + 1
+                channels = sorted({r.get('channel') for r in (slack_results or []) if r.get('channel')})
+                conf_top = ", ".join([c.get('title','') for c in (conf_results or [])[:5]])
+                docs_top = ", ".join([d.get('title','') for d in (docs_results or [])[:5]])
+                if strat_counts:
+                    logger.info("Agent Trace: Slack strategies used: " + ", ".join([f"{k} x{v}" for k,v in strat_counts.items()]))
+                if channels:
+                    logger.info("Agent Trace: Slack channels searched: " + ", ".join([f"#{c}" for c in channels]))
+                logger.info(f"Agent Trace: Confluence results: {len(conf_results or [])}; Top: {conf_top}")
+                logger.info(f"Agent Trace: Docs results: {len(docs_results or [])}; Top: {docs_top}")
+            except Exception:
+                pass
 
-    # Get agent response
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking and searching..."):
-            response = process_query(prompt)
+            if slack_results or conf_results or docs_results or zendesk_results or jira_results:
+                _render_sources(slack_results, conf_results, docs_results, zendesk_results, jira_results)
+            
+            st.session_state["chat_messages"].append({"role": "assistant", "content": grouped_output})
 
-        # Display answer
-        st.markdown(response["answer"])
+            new_entry = {
+                "question": user_input.strip(),
+                "channel_hint": (channel_hint or "").strip() or None,
+                "space_hint": (space_hint or "").strip() or None,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            }
+            if not st.session_state["search_history"] or st.session_state["search_history"][0].get("question") != new_entry["question"]:
+                st.session_state["search_history"].insert(0, new_entry)
+                if len(st.session_state["search_history"]) > 50:
+                    st.session_state["search_history"] = st.session_state["search_history"][:50]
 
-        # Display sources
-        if response["sources"]:
-            render_sources(response["sources"])
-
-        # Show cache indicator
-        if response["from_cache"]:
-            st.caption("📦 From cache")
-
-        # Add assistant message to chat
-        st.session_state["messages"].append({
-            "role": "assistant",
-            "content": response["answer"],
-            "sources": response["sources"],
-            "from_cache": response["from_cache"]
-        })
-        st.session_state["chat_history"].append({
-            "role": "assistant",
-            "content": response["answer"]
-        })
-
-# =========================
-# Welcome message
-# =========================
-
-if len(st.session_state["messages"]) == 0:
-    st.markdown("---")
-    st.markdown("### 👋 Welcome! Ask me anything about:")
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.markdown("""
-        **📚 Documentation**
-        - Product features
-        - Configuration guides
-        - Best practices
-        """)
-
-    with col2:
-        st.markdown("""
-        **🎫 Customer Issues**
-        - Zendesk tickets
-        - Common problems
-        - Support patterns
-        """)
-
-    with col3:
-        st.markdown("""
-        **📋 Development**
-        - Jira tickets
-        - Roadmap items
-        - Feature status
-        """)
-
-    st.markdown("---")
-    st.markdown("**Example questions:**")
-    st.markdown("""
-    - "What is SAML authentication in Incorta?"
-    - "Show me recent Zendesk tickets about performance issues"
-    - "What's the status of the new dashboard feature in Jira?"
-    - "How do I configure materialized views?"
-    """)
-
-# =========================
-# Footer
-# =========================
-
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #666; padding: 1rem;">
-    <small>Internal PM Chat • Conversational Search Assistant • Powered by AI</small>
-</div>
-""", unsafe_allow_html=True)
+if __name__ == "__main__":
+    main()

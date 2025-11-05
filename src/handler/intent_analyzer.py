@@ -261,7 +261,8 @@ def analyze_user_intent(
             "intent": "follow_up",
             "query_type": query_type_info["query_type"],
             "needs_fresh_data": False,
-            "data_sources": [],
+            # Keep knowledge_base available for follow-ups so we can still cite docs
+            "data_sources": ["knowledge_base"],
             "slack_params": {
                 "channels": "all",
                 "time_range": "all",
@@ -472,7 +473,8 @@ def validate_intent(intent_data: Dict[str, Any]) -> Dict[str, Any]:
     intent_data.setdefault("intent", "mixed_search")
     intent_data.setdefault("query_type", "new_search")
     intent_data.setdefault("needs_fresh_data", True)
-    intent_data.setdefault("data_sources", ["slack", "confluence"])
+    # Include knowledge_base by default so docs are considered unless explicitly excluded
+    intent_data.setdefault("data_sources", ["slack", "confluence", "knowledge_base"])
     intent_data.setdefault("search_strategy", "fuzzy_match")
     
     # Validate slack_params
@@ -490,6 +492,14 @@ def validate_intent(intent_data: Dict[str, Any]) -> Dict[str, Any]:
     conf_params.setdefault("limit", 15)  # Increased default limit for comprehensive search
     conf_params.setdefault("keywords", [])
     conf_params.setdefault("priority_terms", [])
+
+    # Heuristics: for doc-style queries, ensure knowledge_base is included
+    ql = json.dumps(intent_data).lower()
+    doc_terms = ["how to", "install", "installation", "setup", "configure", "guide", "documentation", "on prem", "on-prem"]
+    if any(t in ql for t in doc_terms):
+        ds = set(intent_data.get("data_sources", []))
+        ds.add("knowledge_base")
+        intent_data["data_sources"] = list(ds)
     
     return intent_data
 

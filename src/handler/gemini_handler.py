@@ -632,3 +632,41 @@ __all__ = [
     "_supported_models",
     "_parse_json_response"
 ]
+
+
+# Backward compatibility wrapper for older app code
+def ask_gemini(prompt: Optional[str] = None, context: str = "", question: Optional[str] = None, model_name: Optional[str] = None) -> str:
+    """
+    Backward-compatible wrapper that generates text from Gemini.
+
+    Accepts either a full prompt (prompt) or a combination of context + question.
+    """
+    try:
+        current_key = _get_current_api_key()
+        genai.configure(api_key=current_key)
+        model_to_use = model_name or DEFAULT_MODEL
+        model = genai.GenerativeModel(model_to_use)
+
+        # Build prompt text
+        if prompt and prompt.strip():
+            prompt_text = prompt
+        else:
+            prompt_text = (context or "").strip()
+            if question and question.strip():
+                if prompt_text:
+                    prompt_text = f"{prompt_text}\n\nQuestion: {question.strip()}"
+                else:
+                    prompt_text = question.strip()
+
+        generation_config = {
+            "temperature": 0.1,
+            "top_p": 0.95,
+            "top_k": 40,
+            "max_output_tokens": 1000,
+        }
+        resp = model.generate_content(prompt_text, generation_config=generation_config)
+        text = resp.text.strip() if hasattr(resp, "text") and resp.text else ""
+        return text
+    except Exception as e:
+        logger.error(f"ask_gemini failed: {e}")
+        return ""
