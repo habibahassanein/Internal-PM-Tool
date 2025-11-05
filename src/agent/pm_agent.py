@@ -76,6 +76,11 @@ def search_confluence_tool(
         logger.info(f"Starting Confluence search with query: {query}")
         intent_data = analyze_user_intent(query)
 
+        # Override the limit from intent analysis with our max_results
+        if "confluence_params" not in intent_data:
+            intent_data["confluence_params"] = {}
+        intent_data["confluence_params"]["limit"] = max_results
+
         logger.info(f"Intent analysis complete. Confluence params: {intent_data.get('confluence_params', {})}")
 
         # Use the optimized handler with intent data
@@ -83,8 +88,7 @@ def search_confluence_tool(
 
         logger.info(f"Confluence search returned {len(results)} results")
 
-        # Limit results
-        return results[:max_results]
+        return results
 
     except Exception as e:
         logger.error(f"Confluence search failed with error: {e}", exc_info=True)
