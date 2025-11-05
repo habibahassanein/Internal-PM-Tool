@@ -563,7 +563,7 @@ def process_query(query: str):
 
         # Filter sources by minimum relevance score
         # Only keep sources with score > 0.3 (if score is available)
-        MIN_RELEVANCE_SCORE = 0.3
+        MIN_RELEVANCE_SCORE = 0.2  # Lowered from 0.3 to avoid filtering good results
         filtered_sources = []
         for source in used_sources:
             score = source.get("score", 1.0)  # Default to 1.0 if no score

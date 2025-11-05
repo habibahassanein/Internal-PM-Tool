@@ -14,8 +14,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import create_react_agent, AgentExecutor
 from langchain_core.prompts import PromptTemplate
 
-from ..handler.confluence_handler import search_confluence
+from ..handler.confluence_handler import search_confluence, search_confluence_optimized as confluence_optimized_handler
 from ..handler.slack_handler import search_slack_simplified
+from ..handler.intent_analyzer import analyze_user_intent
 from ..storage.cache_manager import get_cached_search_results, cache_search_results
 
 logger = logging.getLogger(__name__)
@@ -53,102 +54,77 @@ def _get_secret_or_env(name: str, default: str = "") -> str:
 
 @tool(
     "search_confluence_pages",
-    description="""Search for pages in Confluence with optimized query processing.
-    
+    description="""Search for pages in Confluence with AI-powered intent analysis.
+
     Args:
-        query: Search query
-        max_results: Maximum number of results to return
-        space_filter: Specific space to search (None for all spaces)
-    
+        query: Search query (natural language question)
+        max_results: Maximum number of results to return (default 10)
+
     Returns:
-        List of page dictionaries with metadata"""
+        List of page dictionaries with metadata (title, url, excerpt, space, score)"""
 )
-def search_confluence_optimized(
+def search_confluence_tool(
     query: str,
-    max_results: int = 10,
-    space_filter: Optional[str] = None
+    max_results: int = 10
 ) -> List[dict]:
-    """Optimized Confluence search with query preprocessing."""
+    """Search Confluence with intent analysis for better relevance."""
     if not query or not query.strip():
         return []
-    
-    # Use stopwords filtering for better relevance
-    query_words = set(query.lower().split())
-    stop_words = {
-        "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", 
-        "with", "by", "is", "are", "was", "were", "be", "been", "have", "has", 
-        "had", "do", "does", "did", "will", "would", "could", "should", "may", 
-        "might", "can", "what", "when", "where", "why", "how", "who", "which", 
-        "updates", "about", "on"
-    }
-    distinct_words = [word for word in query_words if word not in stop_words and len(word) > 2]
-    
-    # Build search query prioritizing distinct words
-    if distinct_words:
-        search_query = " ".join(distinct_words)
-    else:
-        search_query = query
-    
-    logger.info(f"Optimized Confluence search query: {search_query}, space_filter: {space_filter}")
 
-    return search_confluence(search_query, max_results, space_filter)
+    try:
+        # Analyze user intent to extract keywords, spaces, etc.
+        intent_data = analyze_user_intent(query)
+
+        logger.info(f"Confluence intent analysis: {intent_data.get('confluence_params', {})}")
+
+        # Use the optimized handler with intent data
+        results = confluence_optimized_handler(intent_data, query)
+
+        # Limit results
+        return results[:max_results]
+
+    except Exception as e:
+        logger.error(f"Confluence search failed: {e}")
+        # Fallback to basic search
+        return search_confluence(query, max_results, None)
 
 
 @tool(
     "search_slack_messages",
-    description="""Search for messages in Slack across all channels.
-    
+    description="""Search for messages in Slack with AI-powered channel targeting.
+
     Args:
-        query: Search query
-        max_results: Maximum number of results to return
-        channel_filter: Specific channel to search (None for all channels)
-        max_age_hours: Maximum age of messages in hours (default 0 = all history)
-    
+        query: Search query (natural language question)
+        max_results: Maximum number of results to return (default 15)
+
     Returns:
-        List of message dictionaries with metadata"""
+        List of message dictionaries with enriched metadata (text, username, channel,
+        date, permalink, score, thread_context, reactions)"""
 )
-def search_slack_messages(
+def search_slack_tool(
     query: str,
-    max_results: int = 10,
-    channel_filter: Optional[str] = None,
-    max_age_hours: int = 0  # 0 = all history
+    max_results: int = 15
 ) -> List[dict]:
-    """Search Slack messages with intent-aware processing."""
+    """Search Slack messages with intent analysis and channel intelligence."""
     if not query or not query.strip():
         return []
 
-    # Create intent data for the search system
-    query_terms = query.lower().split()
-    keywords = [term for term in query_terms if len(term) > 2]
-    priority_terms = keywords[:3]  # Top 3 terms as priority
+    try:
+        # Analyze user intent to extract keywords, channels, time ranges, etc.
+        intent_data = analyze_user_intent(query)
 
-    intent_data = {
-        "slack_params": {
-            "keywords": keywords,
-            "priority_terms": priority_terms,
-            "channels": channel_filter if channel_filter else "all",
-            "time_range": "all",  # Repository system searches all history
-            "limit": max_results
-        },
-        "search_strategy": "fuzzy_match"
-    }
+        logger.info(f"Slack intent analysis: {intent_data.get('slack_params', {})}")
 
-    # Use the simplified search
-    results = search_slack_simplified(query, intent_data, max_results)
-    
-    # Convert to legacy format for compatibility
-    legacy_results = []
-    for result in results:
-        legacy_results.append({
-            "text": result.get("text", ""),
-            "username": result.get("username", "Unknown"),
-            "channel": result.get("channel", "unknown"),
-            "ts": result.get("ts", ""),
-            "permalink": result.get("permalink", ""),
-            "source": "slack"
-        })
-    
-    return legacy_results
+        # Use the enhanced search with proper intent data
+        results = search_slack_simplified(query, intent_data, max_results)
+
+        # Return enriched results directly (no data stripping!)
+        # This preserves: thread_context, reactions, scores, etc.
+        return results
+
+    except Exception as e:
+        logger.error(f"Slack search failed: {e}")
+        return []
 
 
 @tool(
@@ -485,40 +461,50 @@ def create_pm_agent(api_key: Optional[str] = None):
     if not api_manager and not api_key:
         raise ValueError("GEMINI_API_KEY must be set in environment, Streamlit secrets, or provided as argument")
 
-    # Define tools
+    # Define tools (using refactored versions with intent analysis)
     tools = [
-        search_confluence_optimized,
-        search_slack_messages,
+        search_confluence_tool,  # Updated: now uses intent analysis
+        search_slack_tool,        # Updated: now uses intent analysis + channel intelligence
         search_docs,
         fetch_schema_details,
         fetch_table_data
     ]
 
     # Agent prompt template
-    template = """You are an AI Assistant that helps the Product Managers to Search across multiple internal knowledge bases including Confluence, Slack, Docs, Zendesk, and Jira.
+    template = """You are an AI Assistant that helps Product Managers search across multiple internal knowledge bases including Confluence, Slack, Docs, Zendesk, and Jira.
 
 Your available tools are:
 {tools}
 
-Use the `search_confluence_pages` tool to search for relevant Confluence pages.
+IMPORTANT SEARCH GUIDELINES:
 
-Use the `search_slack_messages` tool to search for relevant Slack messages.
+1. Use `search_confluence_pages` to find Confluence documentation:
+   - The tool uses AI to automatically target relevant spaces
+   - Just pass the user's question directly - no need to extract keywords
 
-Use the `search_docs` tool to search for relevant Docs for the PM.
+2. Use `search_slack_messages` to find Slack conversations:
+   - The tool uses channel intelligence to search the most relevant channels
+   - Returns enriched results with thread context and engagement metrics
+   - Just pass the user's question directly
 
-Use the `fetch_schema_details` tool to get the details of Zendesk and Jira
-the input of the `fetch_schema_details` tool should be ONLY ZendeskTickets if the question is about Zendesk
-and Jira_F if the question is about Jira.
+3. Use `search_docs` to search the knowledge base (Incorta Community, Docs & Support)
 
-Use the `fetch_table_data` tool to get the data from the tables in ZendeskTickets and Jira_F schemas.
+4. Use `fetch_schema_details` for Zendesk and Jira database schemas:
+   - Input must be EXACTLY "ZendeskTickets" for Zendesk questions
+   - Input must be EXACTLY "Jira_F" for Jira questions
 
+5. Use `fetch_table_data` to query data from Zendesk/Jira tables
 
-Your Default is to search in all the resources using the relevant tools above.
-but if a PM specifically asks to search in a specific resource, use the relevant tool only.
+SEARCH STRATEGY:
+- By default, search ALL relevant sources (Confluence, Slack, Docs) for comprehensive answers
+- If the user specifically asks for one source (e.g., "search Slack"), use only that tool
+- Each tool automatically handles relevance scoring - trust the results
+- If you get no results, try rephrasing the query with synonyms or related terms
 
-if the PM keyword doesn't return any relevant results try to use similar keywords that are related to the PM keyword.
-
-Provide Recommendations based on relevant tickets from Zendesk and Jira for the PMs to be able to take action on them.
+RESPONSE FORMAT:
+- Provide clear, actionable answers based on the search results
+- Include recommendations from Zendesk/Jira tickets when relevant
+- Cite specific sources in your answer (channel names, page titles, etc.)
 
 Use the following format:
 
