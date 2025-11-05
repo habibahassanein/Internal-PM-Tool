@@ -10,6 +10,7 @@ from src.storage.cache_manager import (
     get_cache_manager
 )
 from src.agent import create_pm_agent
+from src.auth import get_auth_handler, get_session_manager
 
 # =========================
 # Environment & Config
@@ -24,6 +25,34 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# =========================
+# Authentication
+# =========================
+
+# Initialize authentication handler
+auth_handler = get_auth_handler()
+session_manager = get_session_manager()
+
+# Require authentication before proceeding
+if not auth_handler.require_auth():
+    st.stop()
+
+# Get authenticated user info
+user_info = auth_handler.get_user_info()
+
+# Create or update session
+if "auth_session_id" not in st.session_state:
+    st.session_state.auth_session_id = session_manager.create_session(user_info)
+
+# Update session activity
+session_manager.update_session_activity(st.session_state.auth_session_id)
+
+# Validate session is still active
+if not session_manager.is_session_valid(st.session_state.auth_session_id):
+    st.warning("Your session has expired. Please log in again.")
+    auth_handler.logout()
+    st.stop()
 
 # Constants / Tunables
 LLM_NAME = "Gemini 2.0 Flash Experimental"
@@ -130,6 +159,9 @@ st.markdown('<div class="subtitle">Ask questions across Confluence, Slack, Docs,
 # =========================
 
 with st.sidebar:
+    # Show authenticated user widget
+    auth_handler.show_user_widget()
+
     st.header("Chat Configuration")
 
     st.info("""
@@ -522,7 +554,27 @@ if prompt := st.chat_input("Ask a question about your PM tools and processes..."
     # Get agent response
     with st.chat_message("assistant"):
         with st.spinner("Thinking and searching..."):
+            import time
+            start_time = time.time()
             response = process_query(prompt)
+            response_time_ms = int((time.time() - start_time) * 1000)
+
+            # Log query for audit trail
+            sources_used = []
+            if response.get("sources"):
+                for source in response["sources"]:
+                    source_type = source.get("source_type", "unknown")
+                    if source_type not in sources_used:
+                        sources_used.append(source_type)
+
+            session_manager.log_query(
+                session_id=st.session_state.auth_session_id,
+                user_id=user_info['sub'],
+                email=user_info['email'],
+                query_text=prompt,
+                sources_used=sources_used,
+                response_time_ms=response_time_ms
+            )
 
         # Display answer
         st.markdown(response["answer"])
