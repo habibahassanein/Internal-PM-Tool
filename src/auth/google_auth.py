@@ -248,35 +248,46 @@ class GoogleOAuthHandler:
         """)
 
         # Generate authorization URL
-        auth_url, state = self.get_authorization_url()
+        try:
+            auth_url, state = self.get_authorization_url()
 
-        # Store state in session for CSRF protection
-        st.session_state.auth_state = state
+            # Store state in session for CSRF protection
+            st.session_state.auth_state = state
 
-        col1, col2, col3 = st.columns([1, 2, 1])
+            col1, col2, col3 = st.columns([1, 2, 1])
 
-        with col2:
-            # Use a link instead of button with JavaScript redirect
-            st.markdown(f"""
-                <div style="text-align: center; margin: 20px 0;">
-                    <a href="{auth_url}" target="_self" style="
-                        display: inline-block;
-                        padding: 12px 24px;
-                        background-color: #1f77b4;
-                        color: white;
-                        text-decoration: none;
-                        border-radius: 5px;
-                        font-weight: 600;
-                        font-size: 16px;
-                        transition: background-color 0.3s;
-                    ">
-                        🔑 Sign in with Google
-                    </a>
-                </div>
-            """, unsafe_allow_html=True)
+            with col2:
+                # Use a link instead of button with JavaScript redirect
+                st.markdown(f"""
+                    <div style="text-align: center; margin: 20px 0;">
+                        <a href="{auth_url}" target="_self" style="
+                            display: inline-block;
+                            padding: 12px 24px;
+                            background-color: #1f77b4;
+                            color: white;
+                            text-decoration: none;
+                            border-radius: 5px;
+                            font-weight: 600;
+                            font-size: 16px;
+                            transition: background-color 0.3s;
+                        ">
+                            🔑 Sign in with Google
+                        </a>
+                    </div>
+                """, unsafe_allow_html=True)
 
-        st.markdown("---")
-        st.caption("🔒 Your credentials are never stored. Authentication is handled securely by Google.")
+            st.markdown("---")
+            st.caption("🔒 Your credentials are never stored. Authentication is handled securely by Google.")
+
+            # Debug information (can be removed later)
+            with st.expander("🔧 Debug Information"):
+                st.code(f"Redirect URI: {self.redirect_uri}")
+                st.code(f"Client ID configured: {'Yes' if 'web' in st.secrets or os.path.exists(self.client_secrets_file) else 'No'}")
+
+        except Exception as e:
+            st.error(f"❌ Error generating login URL: {str(e)}")
+            st.code(f"Redirect URI: {self.redirect_uri}")
+            st.code(f"Error details: {type(e).__name__}: {str(e)}")
 
     def logout(self):
         """Log out the current user."""
