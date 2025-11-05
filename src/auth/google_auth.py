@@ -195,9 +195,12 @@ class GoogleOAuthHandler:
             from .session_manager import get_session_manager
             session_mgr = get_session_manager()
             if session_mgr.is_session_valid(st.session_state.auth_session_id):
-                # Session is still valid, restore authentication
-                st.session_state.authenticated = True
-                return True
+                # Session is still valid, restore user info and authentication
+                user_info = session_mgr.get_user_from_session(st.session_state.auth_session_id)
+                if user_info:
+                    st.session_state.user_info = user_info
+                    st.session_state.authenticated = True
+                    return True
 
         # Check for OAuth callback parameters
         query_params = st.query_params

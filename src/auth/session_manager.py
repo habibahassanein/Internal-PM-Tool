@@ -377,6 +377,43 @@ class SessionManager:
         finally:
             conn.close()
 
+    def get_user_from_session(self, session_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get user info from session ID.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            User info dictionary or None
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT u.user_id, u.email, u.name, u.picture
+                FROM sessions s
+                JOIN users u ON s.user_id = u.user_id
+                WHERE s.session_id = ? AND s.is_active = 1
+            """, (session_id,))
+
+            row = cursor.fetchone()
+
+            if row:
+                return {
+                    'sub': row[0],
+                    'email': row[1],
+                    'name': row[2],
+                    'picture': row[3],
+                    'email_verified': True
+                }
+
+            return None
+
+        finally:
+            conn.close()
+
     def get_recent_queries(self, user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
         """
         Get recent queries for a user.
