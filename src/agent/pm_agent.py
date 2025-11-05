@@ -14,7 +14,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import create_react_agent, AgentExecutor
 from langchain_core.prompts import PromptTemplate
 
-from ..handler.confluence_handler import search_confluence_pages
+from ..handler.confluence_handler import search_confluence
 from ..handler.slack_handler import search_slack_simplified
 from ..storage.cache_manager import get_cached_search_results, cache_search_results
 
@@ -90,8 +90,8 @@ def search_confluence_optimized(
         search_query = query
     
     logger.info(f"Optimized Confluence search query: {search_query}, space_filter: {space_filter}")
-    
-    return search_confluence_pages(search_query, max_results, space_filter)
+
+    return search_confluence(search_query, max_results, space_filter)
 
 
 @tool(
