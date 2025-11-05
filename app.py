@@ -561,6 +561,44 @@ def process_query(query: str):
         if not used_sources:
             used_sources = all_sources
 
+        # Filter sources by minimum relevance score
+        # Only keep sources with score > 0.3 (if score is available)
+        MIN_RELEVANCE_SCORE = 0.3
+        filtered_sources = []
+        for source in used_sources:
+            score = source.get("score", 1.0)  # Default to 1.0 if no score
+            if isinstance(score, (int, float)) and score >= MIN_RELEVANCE_SCORE:
+                filtered_sources.append(source)
+            elif not isinstance(score, (int, float)):
+                # Keep sources without numeric scores
+                filtered_sources.append(source)
+        used_sources = filtered_sources
+
+        # Check if answer indicates no relevant information found
+        # If so, don't show sources (they're not actually relevant)
+        if final_answer and isinstance(final_answer, str):
+            answer_lower = final_answer.lower()
+            no_results_phrases = [
+                "no relevant information",
+                "couldn't find",
+                "could not find",
+                "no information found",
+                "no results",
+                "unable to find",
+                "don't have any information",
+                "no specific information",
+                "no documentation",
+                "no confluence pages",
+                "no slack messages",
+                "no docs found",
+                "sorry, i couldn't",
+                "sorry, i could not",
+                "i don't have",
+                "i couldn't locate"
+            ]
+            if any(phrase in answer_lower for phrase in no_results_phrases):
+                used_sources = []
+
         # Cache results
         try:
             cache_search_results(query, cache_filters, {
