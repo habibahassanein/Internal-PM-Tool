@@ -253,118 +253,185 @@ def _ensure_gemini_key_if_needed():
 # Helper Functions
 # =========================
 
+def _clean_slack_text(text: str) -> str:
+    """Clean Slack message formatting."""
+    import re
+
+    text = re.sub(r'<#[A-Z0-9]+\|([^>]+)>', r'#\1', text)
+    text = re.sub(r'<(https?://[^|>]+)\|([^>]+)>', r'\2 (\1)', text)
+    text = re.sub(r'<(https?://[^>]+)>', r'\1', text)
+    text = re.sub(r'<@[A-Z0-9]+\|([^>]+)>', r'@\1', text)
+    text = re.sub(r'<@([A-Z0-9]+)>', r'@unknown_user', text)
+    text = text.replace('<!channel>', '@channel')
+    text = text.replace('<!here>', '@here')
+    text = text.replace('<!everyone>', '@everyone')
+
+    return text
+
+
 def render_sources(sources):
-    """Render source citations as cards in a collapsible section, sorted by relevance."""
+    """Render source citations grouped by type in separate expanders."""
     if not sources:
         return
 
-    # Sort sources by relevance (score if available, then by source type priority)
-    def get_sort_key(source):
-        # Priority: 1. Score (higher is better), 2. Source type priority, 3. Original order
-        score = source.get("score", 0.0)
-        if isinstance(score, (int, float)):
-            score_value = float(score)
-        else:
-            score_value = 0.0
-        
-        # Source type priority (lower number = higher priority)
+    import re
+
+    # Categorize sources by type
+    slack_messages = []
+    confluence_pages = []
+    docs_results = []
+    zendesk_results = []
+    jira_results = []
+    other_sources = []
+
+    for source in sources:
+        # Determine source type
         source_type = source.get("source", "unknown")
-        if "channel" in source or "permalink" in source:
-            source_type = "slack"
-        elif "confluence" in source.get("url", "").lower():
-            source_type = "confluence"
-        elif "zendesk" in source.get("url", "").lower():
-            source_type = "zendesk"
-        elif "jira" in source.get("url", "").lower():
-            source_type = "jira"
-        elif source.get("url", "").startswith("http"):
-            source_type = "knowledge_base"
-        
-        source_priority = {
-            "knowledge_base": 1,
-            "confluence": 2,
-            "slack": 3,
-            "jira": 4,
-            "zendesk": 5,
-            "unknown": 6
-        }
-        
-        priority = source_priority.get(source_type, 6)
-        
-        # Return tuple for sorting: negative score (higher first), then priority
-        return (-score_value, priority)
-    
-    # Deduplicate sources by URL/permalink
-    seen_urls = set()
-    unique_sources = []
-    for idx, source in enumerate(sources):
-        url = source.get("url") or source.get("permalink") or ""
-        if url and url not in seen_urls:
-            seen_urls.add(url)
-            unique_sources.append(source)
-        elif not url:
-            unique_sources.append(source)
-    
-    # Sort by relevance (score descending, then source type priority)
-    sorted_sources = sorted(unique_sources, key=get_sort_key)
-    
-    # Limit to top 8 sources
-    sorted_sources = sorted_sources[:8]
-    
-    # Display sources in collapsible expander
-    with st.expander(f"📚 Sources ({len(sorted_sources)})", expanded=False):
-        # Display each source as a citation card
-        for i, source in enumerate(sorted_sources, 1):
-            # Determine source type
-            source_type = source.get("source", "unknown")
-            if "channel" in source or "permalink" in source:
-                source_type = "slack"
-            elif "confluence" in source.get("url", "").lower():
-                source_type = "confluence"
-            elif "zendesk" in source.get("url", "").lower():
-                source_type = "zendesk"
-            elif "jira" in source.get("url", "").lower():
-                source_type = "jira"
-            elif source.get("url", "").startswith("http"):
-                source_type = "knowledge_base"
+        url = source.get("url", "") or source.get("permalink", "")
 
-            # Source icon mapping
-            source_icons = {
-                "slack": "💬",
-                "confluence": "📖",
-                "zendesk": "🎫",
-                "jira": "📋",
-                "knowledge_base": "📚",
-                "unknown": "📄"
-            }
+        if "channel" in source or "permalink" in source or source_type == "slack":
+            slack_messages.append(source)
+        elif "confluence" in url.lower() or source_type == "confluence":
+            confluence_pages.append(source)
+        elif "zendesk" in url.lower() or source_type == "zendesk":
+            zendesk_results.append(source)
+        elif "jira" in url.lower() or source_type == "jira":
+            jira_results.append(source)
+        elif url.startswith("http") or source_type == "knowledge_base":
+            docs_results.append(source)
+        else:
+            other_sources.append(source)
 
-            icon = source_icons.get(source_type, "📄")
+    # Render Slack Messages
+    with st.expander(f"💬 Slack Messages ({len(slack_messages)} found)", expanded=False):
+        if not slack_messages:
+            st.info("No Slack results found.")
+        else:
+            for idx, m in enumerate(slack_messages, 1):
+                channel = m.get('channel', 'Unknown')
+                username = m.get('username', 'Unknown')
+                timestamp = m.get('date', m.get('ts', 'Unknown'))
+                text = _clean_slack_text(m.get('text', '').strip())
+                permalink = m.get('permalink', '')
+                score = m.get('score', 0.0)
 
-            # Build title
-            if source_type == "slack":
-                channel = source.get("channel", "unknown")
-                username = source.get("username", "unknown")
-                title = f"#{channel} - @{username}"
-            else:
-                title = source.get("title", "Untitled")
+                text_escaped = html.escape(text)[:500]
+                if len(text) > 500:
+                    text_escaped += "..."
 
-            # Build URL
-            url = source.get("url") or source.get("permalink") or ""
+                st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #4A90E2;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="font-weight: 600; color: #1f1f1f;">#{channel}</span>
+                        <span style="color: #666; font-size: 0.9em;">{timestamp}</span>
+                    </div>
+                    <div style="color: #4A90E2; font-size: 0.9em; margin-bottom: 10px;">@{username}</div>
+                    <div style="color: #1f1f1f; line-height: 1.6; margin-bottom: 10px; white-space: pre-wrap;">{text_escaped}</div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <a href="{permalink}" target="_blank" style="color: #4A90E2; text-decoration: none; font-size: 0.9em;">View in Slack</a>
+                        <span style="color: #888; font-size: 0.85em;">Score: {score:.2f}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
-            # Build evidence/text snippet
-            evidence = source.get("text", "") or source.get("excerpt", "")
-            if len(evidence) > 200:
-                evidence = evidence[:200] + "..."
+    # Render Confluence Pages
+    with st.expander(f"📖 Confluence Pages ({len(confluence_pages)} found)", expanded=False):
+        if not confluence_pages:
+            st.info("No Confluence results found.")
+        else:
+            for idx, p in enumerate(confluence_pages, 1):
+                title = p.get('title', 'Untitled')
+                space = p.get('space', 'Unknown')
+                last_modified = p.get('last_modified', 'Unknown')
+                excerpt = (p.get('excerpt') or p.get('text', '')).strip()
+                url = p.get('url', '')
+                score = p.get('score', 0.0)
 
-            # Render citation card
-            st.markdown(f"""
-            <div class="citation-card">
-                <div class="citation-title">{icon} {i}. {html.escape(title)}</div>
-                {'<div class="citation-evidence">' + html.escape(evidence) + '</div>' if evidence else ''}
-                {'<small style="color: #666;">🔗 <a href="' + url + '" target="_blank">' + url[:50] + ('...' if len(url) > 50 else '') + '</a></small>' if url else ''}
-                <br><small style="color: #999;">Source: {source_type.replace('_', ' ').title()}</small>
-            </div>
-            """, unsafe_allow_html=True)
+                # Clean excerpt from HTML tags and highlight markers
+                cleaned_excerpt = re.sub(r'@@@hl@@@(.*?)@@@endhl@@@', r'\1', excerpt)
+                cleaned_excerpt = re.sub(r'<[^>]+>', '', cleaned_excerpt)
+                cleaned_excerpt = cleaned_excerpt.replace('&nbsp;', ' ').replace('&amp;', '&')
+                cleaned_excerpt = cleaned_excerpt.replace('&lt;', '<').replace('&gt;', '>')
+                if len(cleaned_excerpt) > 300:
+                    cleaned_excerpt = cleaned_excerpt[:300] + '...'
+
+                st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #6B46C1;">
+                    <div style="font-weight: 600; color: #1f1f1f; font-size: 1.1em; margin-bottom: 8px;">{html.escape(title)}</div>
+                    <div style="display: flex; gap: 15px; margin-bottom: 10px; font-size: 0.9em;">
+                        <span style="color: #6B46C1; font-weight: 500;">{html.escape(space)}</span>
+                        <span style="color: #666;">{html.escape(last_modified)}</span>
+                        <span style="color: #888;">Score: {score:.2f}</span>
+                    </div>
+                    <div style="color: #444; line-height: 1.6; margin-bottom: 10px; font-style: italic;">{html.escape(cleaned_excerpt)}</div>
+                    <a href="{url}" target="_blank" style="color: #6B46C1; text-decoration: none; font-size: 0.9em;">Open Page</a>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # Render Knowledge Base Docs
+    with st.expander(f"📚 Knowledge Base Docs ({len(docs_results)} found)", expanded=False):
+        if not docs_results:
+            st.info("No docs results found.")
+        else:
+            for idx, d in enumerate(docs_results, 1):
+                title = d.get('title', 'Untitled')
+                url = d.get('url', '')
+                text = (d.get('text') or '').strip()
+                score = d.get('score', 0.0)
+
+                if len(text) > 300:
+                    text = text[:300] + '...'
+
+                st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #28a745;">
+                    <div style="font-weight: 600; color: #1f1f1f; font-size: 1.1em; margin-bottom: 8px;">{html.escape(title)}</div>
+                    <div style="color: #666; font-size: 0.9em; margin-bottom: 10px;">Score: {score:.2f}</div>
+                    <div style="color: #444; line-height: 1.6; margin-bottom: 10px;">{html.escape(text)}</div>
+                    <a href="{url}" target="_blank" style="color: #28a745; text-decoration: none; font-size: 0.9em;">Open Document</a>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # Render Zendesk Tickets
+    if zendesk_results:
+        with st.expander(f"🎫 Zendesk Tickets ({len(zendesk_results)} found)", expanded=False):
+            for idx, z in enumerate(zendesk_results, 1):
+                title = z.get('title', 'Untitled')
+                url = z.get('url', '')
+                text = (z.get('text') or z.get('excerpt', '')).strip()
+                score = z.get('score', 0.0)
+
+                if len(text) > 300:
+                    text = text[:300] + '...'
+
+                st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #dc3545;">
+                    <div style="font-weight: 600; color: #1f1f1f; font-size: 1.1em; margin-bottom: 8px;">{html.escape(title)}</div>
+                    <div style="color: #666; font-size: 0.9em; margin-bottom: 10px;">Score: {score:.2f}</div>
+                    <div style="color: #444; line-height: 1.6; margin-bottom: 10px;">{html.escape(text)}</div>
+                    <a href="{url}" target="_blank" style="color: #dc3545; text-decoration: none; font-size: 0.9em;">View Ticket</a>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # Render Jira Issues
+    if jira_results:
+        with st.expander(f"📋 Jira Issues ({len(jira_results)} found)", expanded=False):
+            for idx, j in enumerate(jira_results, 1):
+                title = j.get('title', 'Untitled')
+                url = j.get('url', '')
+                text = (j.get('text') or j.get('excerpt', '')).strip()
+                score = j.get('score', 0.0)
+
+                if len(text) > 300:
+                    text = text[:300] + '...'
+
+                st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #0052CC;">
+                    <div style="font-weight: 600; color: #1f1f1f; font-size: 1.1em; margin-bottom: 8px;">{html.escape(title)}</div>
+                    <div style="color: #666; font-size: 0.9em; margin-bottom: 10px;">Score: {score:.2f}</div>
+                    <div style="color: #444; line-height: 1.6; margin-bottom: 10px;">{html.escape(text)}</div>
+                    <a href="{url}" target="_blank" style="color: #0052CC; text-decoration: none; font-size: 0.9em;">View Issue</a>
+                </div>
+                """, unsafe_allow_html=True)
 
 
 def build_conversation_context():
