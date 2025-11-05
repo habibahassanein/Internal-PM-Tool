@@ -21,6 +21,32 @@ from ..storage.cache_manager import get_cached_search_results, cache_search_resu
 logger = logging.getLogger(__name__)
 
 
+def _get_secret_or_env(name: str, default: str = "") -> str:
+    """
+    Get value from Streamlit secrets first, then fall back to environment variables.
+    
+    Args:
+        name: Name of the secret/environment variable
+        default: Default value if not found
+    
+    Returns:
+        Value from Streamlit secrets or environment variable
+    """
+    # Try Streamlit secrets first (if available and in Streamlit context)
+    try:
+        import streamlit as st
+        # Check if we're in a Streamlit context and if the secret exists
+        if hasattr(st, 'secrets') and name in st.secrets:
+            return st.secrets.get(name, default)
+    except Exception:
+        # Streamlit not available, not in Streamlit context, or any error
+        # Fall through to environment variables
+        pass
+    
+    # Fall back to environment variables (loaded from .env by load_dotenv())
+    return os.getenv(name, default)
+
+
 # =========================
 # Agent Tools
 # =========================
@@ -454,10 +480,10 @@ def create_pm_agent(api_key: Optional[str] = None):
             logger.info(f"Agent: Using API manager with {len(api_manager.api_keys)} key(s)")
         except Exception as e:
             logger.warning(f"Agent: Failed to create API manager: {e}, using single key")
-            api_key = os.getenv("GEMINI_API_KEY")
+            api_key = _get_secret_or_env("GEMINI_API_KEY")
 
     if not api_manager and not api_key:
-        raise ValueError("GEMINI_API_KEY must be set in environment or provided as argument")
+        raise ValueError("GEMINI_API_KEY must be set in environment, Streamlit secrets, or provided as argument")
 
     # Define tools
     tools = [
