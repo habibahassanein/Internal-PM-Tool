@@ -73,20 +73,28 @@ def search_confluence_tool(
 
     try:
         # Analyze user intent to extract keywords, spaces, etc.
+        logger.info(f"Starting Confluence search with query: {query}")
         intent_data = analyze_user_intent(query)
 
-        logger.info(f"Confluence intent analysis: {intent_data.get('confluence_params', {})}")
+        logger.info(f"Intent analysis complete. Confluence params: {intent_data.get('confluence_params', {})}")
 
         # Use the optimized handler with intent data
         results = confluence_optimized_handler(intent_data, query)
+
+        logger.info(f"Confluence search returned {len(results)} results")
 
         # Limit results
         return results[:max_results]
 
     except Exception as e:
-        logger.error(f"Confluence search failed: {e}")
+        logger.error(f"Confluence search failed with error: {e}", exc_info=True)
+        logger.info(f"Falling back to basic Confluence search")
         # Fallback to basic search
-        return search_confluence(query, max_results, None)
+        try:
+            return search_confluence(query, max_results, None)
+        except Exception as fallback_error:
+            logger.error(f"Fallback Confluence search also failed: {fallback_error}", exc_info=True)
+            return []
 
 
 @tool(
@@ -111,19 +119,22 @@ def search_slack_tool(
 
     try:
         # Analyze user intent to extract keywords, channels, time ranges, etc.
+        logger.info(f"Starting Slack search with query: {query}")
         intent_data = analyze_user_intent(query)
 
-        logger.info(f"Slack intent analysis: {intent_data.get('slack_params', {})}")
+        logger.info(f"Intent analysis complete. Slack params: {intent_data.get('slack_params', {})}")
 
         # Use the enhanced search with proper intent data
         results = search_slack_simplified(query, intent_data, max_results)
+
+        logger.info(f"Slack search returned {len(results)} results")
 
         # Return enriched results directly (no data stripping!)
         # This preserves: thread_context, reactions, scores, etc.
         return results
 
     except Exception as e:
-        logger.error(f"Slack search failed: {e}")
+        logger.error(f"Slack search failed with error: {e}", exc_info=True)
         return []
 
 
