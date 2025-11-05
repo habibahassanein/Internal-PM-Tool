@@ -247,19 +247,33 @@ class GoogleOAuthHandler:
         Please sign in with your **@incorta.com** Google account to continue.
         """)
 
+        # Generate authorization URL
+        auth_url, state = self.get_authorization_url()
+
+        # Store state in session for CSRF protection
+        st.session_state.auth_state = state
+
         col1, col2, col3 = st.columns([1, 2, 1])
 
         with col2:
-            if st.button("🔑 Sign in with Google", type="primary", use_container_width=True):
-                # Generate authorization URL
-                auth_url, state = self.get_authorization_url()
-
-                # Store state in session for CSRF protection
-                st.session_state.auth_state = state
-
-                # Redirect to Google OAuth
-                st.markdown(f'<meta http-equiv="refresh" content="0;url={auth_url}">', unsafe_allow_html=True)
-                st.info("Redirecting to Google for authentication...")
+            # Use a link instead of button with JavaScript redirect
+            st.markdown(f"""
+                <div style="text-align: center; margin: 20px 0;">
+                    <a href="{auth_url}" target="_self" style="
+                        display: inline-block;
+                        padding: 12px 24px;
+                        background-color: #1f77b4;
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 5px;
+                        font-weight: 600;
+                        font-size: 16px;
+                        transition: background-color 0.3s;
+                    ">
+                        🔑 Sign in with Google
+                    </a>
+                </div>
+            """, unsafe_allow_html=True)
 
         st.markdown("---")
         st.caption("🔒 Your credentials are never stored. Authentication is handled securely by Google.")
