@@ -165,6 +165,7 @@ def search_confluence(query: str, max_results: int = 10, space_key: Optional[str
                             "space": space_name,
                             "last_modified": last_modified,
                             "score": score,
+                            "source": "confluence",
                         })
                     
                     # If we got results, break out of the loop
@@ -266,7 +267,8 @@ def _alternative_confluence_search(client: Confluence, query: str, max_results: 
                         "url": url,
                         "space": space_name,
                         "last_modified": "Recent",
-                        "match_score": match_score
+                        "match_score": match_score,
+                        "source": "confluence",
                     })
                         
             except Exception as e:
