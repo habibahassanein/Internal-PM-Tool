@@ -152,149 +152,65 @@ if "slack_token" not in st.session_state or not _is_slack_authenticated_cached()
         <style>
         .stApp {
             background: linear-gradient(135deg, #1f77b4 0%, #0d5aa7 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
-        .login-container {
+        .login-box {
             background: white;
-            border-radius: 16px;
-            padding: 3rem;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-            max-width: 500px;
-            margin: 0 auto;
+            border-radius: 12px;
+            padding: 3rem 2rem;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
             text-align: center;
+            margin-top: 5rem;
         }
         .login-logo {
-            font-size: 4rem;
+            font-size: 3.5rem;
             margin-bottom: 1rem;
         }
         .login-title {
-            font-size: 2rem;
-            font-weight: 700;
+            font-size: 1.8rem;
+            font-weight: 600;
             color: #1f77b4;
             margin-bottom: 0.5rem;
         }
         .login-subtitle {
             color: #666;
-            font-size: 1rem;
             margin-bottom: 2rem;
-        }
-        .sources-list {
-            color: #1f77b4;
-            font-weight: 500;
-            margin: 1.5rem 0;
-            font-size: 0.9rem;
-        }
-        .features-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-            margin: 2rem 0;
-            text-align: left;
-        }
-        .feature-item {
-            padding: 1rem;
-            background: #f8f9fa;
-            border-radius: 8px;
-            border-left: 3px solid #1f77b4;
-        }
-        .feature-icon {
-            font-size: 1.5rem;
-            margin-bottom: 0.5rem;
-        }
-        .feature-title {
-            font-weight: 600;
-            color: #1f77b4;
-            font-size: 0.9rem;
-            margin-bottom: 0.25rem;
-        }
-        .feature-desc {
-            color: #666;
-            font-size: 0.85rem;
         }
         .slack-button {
             display: inline-block;
             background: #1f77b4;
             color: white;
-            padding: 14px 48px;
+            padding: 12px 40px;
             border-radius: 8px;
             text-decoration: none;
             font-weight: 600;
-            font-size: 1rem;
-            margin: 2rem 0 1rem;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 12px rgba(31, 119, 180, 0.3);
+            transition: all 0.2s;
         }
         .slack-button:hover {
             background: #0d5aa7;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(31, 119, 180, 0.4);
+            transform: translateY(-1px);
         }
-        .powered-by {
-            color: #999;
-            font-size: 0.85rem;
-            margin-top: 1rem;
-        }
-        /* Hide Streamlit default elements */
-        #MainMenu {visibility: hidden;}
-        header {visibility: hidden;}
-        footer {visibility: hidden;}
         </style>
     """, unsafe_allow_html=True)
 
-    # Centered content using columns
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2, col3 = st.columns([1, 1.5, 1])
 
     with col2:
         st.markdown("""
-            <div class="login-container">
+            <div class="login-box">
                 <div class="login-logo">💬</div>
                 <div class="login-title">Internal PM Chat</div>
-                <div class="login-subtitle">Your AI-powered knowledge assistant</div>
-
-                <div class="sources-list">
-                    Slack • Confluence • Zendesk • Jira<br>
-                    Community • Docs • Support
-                </div>
-
-                <div class="features-grid">
-                    <div class="feature-item">
-                        <div class="feature-icon">🤖</div>
-                        <div class="feature-title">AI-Powered</div>
-                        <div class="feature-desc">Smart answers with citations</div>
-                    </div>
-                    <div class="feature-item">
-                        <div class="feature-icon">⚡</div>
-                        <div class="feature-title">Instant Access</div>
-                        <div class="feature-desc">Real-time search</div>
-                    </div>
-                    <div class="feature-item">
-                        <div class="feature-icon">📊</div>
-                        <div class="feature-title">Multi-Source</div>
-                        <div class="feature-desc">Unified experience</div>
-                    </div>
-                    <div class="feature-item">
-                        <div class="feature-icon">🔒</div>
-                        <div class="feature-title">Secure</div>
-                        <div class="feature-desc">Slack authentication</div>
-                    </div>
-                </div>
+                <div class="login-subtitle">Sign in to continue</div>
         """, unsafe_allow_html=True)
 
         try:
             oauth_url = get_oauth_url()
             st.markdown(f"""
-                <a href="{oauth_url}" class="slack-button">
-                    Sign in with Slack
-                </a>
-                <div class="powered-by">Powered by Gemini 2.0 Flash</div>
+                <a href="{oauth_url}" class="slack-button">Sign in with Slack</a>
             </div>
             """, unsafe_allow_html=True)
         except Exception:
             st.markdown("</div>", unsafe_allow_html=True)
-            st.error("To enable Slack login, set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, and SLACK_REDIRECT_URI in st.secrets or environment.")
+            st.error("OAuth configuration missing")
 
     st.stop()
 
