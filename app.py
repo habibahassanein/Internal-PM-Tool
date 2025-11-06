@@ -528,18 +528,36 @@ def process_query(query: str):
                     try:
                         obs_data = step.observation
                         collected = []
+                        
+                        # Handle string representation of list (JSON serialized)
+                        if isinstance(obs_data, str):
+                            try:
+                                import json
+                                obs_data = json.loads(obs_data)
+                            except (json.JSONDecodeError, ValueError):
+                                # If not JSON, try eval (less safe but might work for list strings)
+                                try:
+                                    obs_data = eval(obs_data) if obs_data.strip().startswith('[') else obs_data
+                                except:
+                                    pass
+                        
                         if isinstance(obs_data, list):
                             # DEBUG: Log observation data
                             logger.info(f"DEBUG - Observation contains {len(obs_data)} items")
                             confluence_items = []
                             for item in obs_data:
-                                if isinstance(item, dict) and any(k in item for k in ["url", "title", "text", "permalink"]):
+                                # Check for source items - include "excerpt" for Confluence results
+                                if isinstance(item, dict) and any(k in item for k in ["url", "title", "text", "excerpt", "permalink"]):
                                     all_sources.append(item)
                                     collected.append(item)
-                                    # Track Confluence items specifically
+                                    # Track Confluence items specifically - check for source field or space field
                                     url = item.get("url", "") or item.get("permalink", "")
-                                    if "confluence" in url.lower() or item.get("space"):
+                                    source_type = item.get("source", "")
+                                    if "confluence" in url.lower() or item.get("space") or source_type == "confluence":
                                         confluence_items.append(item.get("title", "NO_TITLE"))
+                                        # Ensure source field is set if missing
+                                        if "source" not in item:
+                                            item["source"] = "confluence"
                             if confluence_items:
                                 logger.info(f"DEBUG - Found {len(confluence_items)} Confluence items: {confluence_items}")
                         if collected:
@@ -590,7 +608,7 @@ def process_query(query: str):
         MIN_RELEVANCE_SCORE = 0.2  # Lowered from 0.3 to avoid filtering good results
 
         # DEBUG: Log before filtering
-        confluence_before = [s for s in used_sources if "confluence" in (s.get("url", "") or "").lower() or s.get("space")]
+        confluence_before = [s for s in used_sources if "confluence" in (s.get("url", "") or "").lower() or s.get("space") or s.get("source") == "confluence"]
         logger.info(f"DEBUG - Before filtering: {len(used_sources)} total sources, {len(confluence_before)} Confluence sources")
         if confluence_before:
             logger.info(f"DEBUG - Confluence titles before filter: {[s.get('title', 'NO_TITLE') for s in confluence_before]}")
@@ -606,7 +624,7 @@ def process_query(query: str):
         used_sources = filtered_sources
 
         # DEBUG: Log after filtering
-        confluence_after = [s for s in used_sources if "confluence" in (s.get("url", "") or "").lower() or s.get("space")]
+        confluence_after = [s for s in used_sources if "confluence" in (s.get("url", "") or "").lower() or s.get("space") or s.get("source") == "confluence"]
         logger.info(f"DEBUG - After filtering: {len(used_sources)} total sources, {len(confluence_after)} Confluence sources")
         if confluence_after:
             logger.info(f"DEBUG - Confluence titles after filter: {[s.get('title', 'NO_TITLE') for s in confluence_after]}")
@@ -724,7 +742,7 @@ if prompt := st.chat_input("Ask a question about your PM tools and processes..."
         # Display sources
         if response["sources"]:
             # DEBUG: Log what's being passed to render_sources
-            confluence_in_response = [s for s in response["sources"] if "confluence" in (s.get("url", "") or "").lower() or s.get("space")]
+            confluence_in_response = [s for s in response["sources"] if "confluence" in (s.get("url", "") or "").lower() or s.get("space") or s.get("source") == "confluence"]
             logger.info(f"DEBUG - Passing to render_sources: {len(response['sources'])} total, {len(confluence_in_response)} Confluence")
             if confluence_in_response:
                 logger.info(f"DEBUG - Confluence titles in render_sources: {[s.get('title', 'NO_TITLE') for s in confluence_in_response]}")
