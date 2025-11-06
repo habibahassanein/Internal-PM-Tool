@@ -153,92 +153,135 @@ if "slack_token" not in st.session_state or not _is_slack_authenticated_cached()
         .stApp {
             background: linear-gradient(135deg, #1f77b4 0%, #0d5aa7 100%);
             min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-container {
+            background: white;
+            border-radius: 16px;
+            padding: 3rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            max-width: 500px;
+            margin: 0 auto;
+            text-align: center;
         }
         .login-logo {
-            text-align: center;
-            font-size: 5rem;
+            font-size: 4rem;
             margin-bottom: 1rem;
-            animation: float 3s ease-in-out infinite;
-        }
-        @keyframes float {
-            0%, 100% { transform: translateY(0px); }
-            50% { transform: translateY(-10px); }
         }
         .login-title {
-            text-align: center;
-            font-size: 2.5rem;
+            font-size: 2rem;
             font-weight: 700;
-            color: white;
-            margin-bottom: 0.75rem;
+            color: #1f77b4;
+            margin-bottom: 0.5rem;
         }
         .login-subtitle {
-            text-align: center;
-            color: rgba(255, 255, 255, 0.9);
-            font-size: 1.1rem;
+            color: #666;
+            font-size: 1rem;
             margin-bottom: 2rem;
-            line-height: 1.6;
+        }
+        .sources-list {
+            color: #1f77b4;
+            font-weight: 500;
+            margin: 1.5rem 0;
+            font-size: 0.9rem;
+        }
+        .features-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin: 2rem 0;
+            text-align: left;
+        }
+        .feature-item {
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 3px solid #1f77b4;
+        }
+        .feature-icon {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .feature-title {
+            font-weight: 600;
+            color: #1f77b4;
+            font-size: 0.9rem;
+            margin-bottom: 0.25rem;
+        }
+        .feature-desc {
+            color: #666;
+            font-size: 0.85rem;
         }
         .slack-button {
-            display: block;
-            background: white;
-            color: #1f77b4;
-            padding: 16px 40px;
-            border-radius: 12px;
+            display: inline-block;
+            background: #1f77b4;
+            color: white;
+            padding: 14px 48px;
+            border-radius: 8px;
             text-decoration: none;
             font-weight: 600;
-            font-size: 1.1rem;
-            text-align: center;
-            margin: 2rem auto;
-            max-width: 300px;
+            font-size: 1rem;
+            margin: 2rem 0 1rem;
             transition: all 0.3s ease;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 4px 12px rgba(31, 119, 180, 0.3);
         }
         .slack-button:hover {
+            background: #0d5aa7;
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-            color: #0d5aa7;
+            box-shadow: 0 6px 20px rgba(31, 119, 180, 0.4);
         }
-        div[data-testid="stVerticalBlock"] > div[data-testid="stContainer"] {
-            background: white;
-            border-radius: 12px;
-            padding: 2rem;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+        .powered-by {
+            color: #999;
+            font-size: 0.85rem;
+            margin-top: 1rem;
         }
+        /* Hide Streamlit default elements */
+        #MainMenu {visibility: hidden;}
+        header {visibility: hidden;}
+        footer {visibility: hidden;}
         </style>
     """, unsafe_allow_html=True)
 
-    st.write("")
-    st.write("")
-    st.write("")
-
-    col1, col2, col3 = st.columns([1, 2.5, 1])
+    # Centered content using columns
+    col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
-        st.markdown('<div class="login-logo">💬</div>', unsafe_allow_html=True)
-        st.markdown('<div class="login-title">Internal PM Chat</div>', unsafe_allow_html=True)
-        st.markdown('<div class="login-subtitle">Your AI-powered knowledge assistant</div>', unsafe_allow_html=True)
+        st.markdown("""
+            <div class="login-container">
+                <div class="login-logo">💬</div>
+                <div class="login-title">Internal PM Chat</div>
+                <div class="login-subtitle">Your AI-powered knowledge assistant</div>
 
-        with st.container():
-            st.markdown("### 🔍 Search Across Multiple Sources")
-            st.write("**Slack** • **Confluence** • **Zendesk** • **Jira** • **Community** • **Docs** • **Support**")
+                <div class="sources-list">
+                    Slack • Confluence • Zendesk • Jira<br>
+                    Community • Docs • Support
+                </div>
 
-            st.markdown("---")
-
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.markdown("**🤖 AI-Powered**")
-                st.caption("Smart answers with citations")
-            with col_b:
-                st.markdown("**⚡ Instant Access**")
-                st.caption("Real-time knowledge search")
-
-            col_c, col_d = st.columns(2)
-            with col_c:
-                st.markdown("**📊 Multi-Source**")
-                st.caption("Unified search experience")
-            with col_d:
-                st.markdown("**🔒 Secure**")
-                st.caption("Slack authentication")
+                <div class="features-grid">
+                    <div class="feature-item">
+                        <div class="feature-icon">🤖</div>
+                        <div class="feature-title">AI-Powered</div>
+                        <div class="feature-desc">Smart answers with citations</div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">⚡</div>
+                        <div class="feature-title">Instant Access</div>
+                        <div class="feature-desc">Real-time search</div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">📊</div>
+                        <div class="feature-title">Multi-Source</div>
+                        <div class="feature-desc">Unified experience</div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">🔒</div>
+                        <div class="feature-title">Secure</div>
+                        <div class="feature-desc">Slack authentication</div>
+                    </div>
+                </div>
+        """, unsafe_allow_html=True)
 
         try:
             oauth_url = get_oauth_url()
@@ -246,11 +289,12 @@ if "slack_token" not in st.session_state or not _is_slack_authenticated_cached()
                 <a href="{oauth_url}" class="slack-button">
                     Sign in with Slack
                 </a>
+                <div class="powered-by">Powered by Gemini 2.0 Flash</div>
+            </div>
             """, unsafe_allow_html=True)
         except Exception:
-            st.info("To enable Slack login, set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, and SLACK_REDIRECT_URI in st.secrets or environment.")
-
-        st.caption("Powered by Gemini 2.0 Flash")
+            st.markdown("</div>", unsafe_allow_html=True)
+            st.error("To enable Slack login, set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, and SLACK_REDIRECT_URI in st.secrets or environment.")
 
     st.stop()
 
