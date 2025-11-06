@@ -154,6 +154,11 @@ def search_slack_tool(
     import streamlit as st
     user_token = st.session_state.get("slack_token") if hasattr(st, 'session_state') else None
 
+    # DEBUG: Log token status
+    token_status = "present" if user_token else "MISSING"
+    token_prefix = user_token[:10] if user_token else "None"
+    logger.warning(f"🔐 Slack token status: {token_status} (prefix: {token_prefix}...)")
+
     results = search_slack(query, intent_data, max_results, user_token)
 
     # Convert to legacy format for compatibility
