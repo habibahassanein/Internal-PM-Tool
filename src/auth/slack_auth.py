@@ -92,9 +92,10 @@ class SlackOAuthHandler:
         # Use comma-separated scopes for user_scope (matching Farah's implementation)
         user_scopes = ",".join(self.USER_SCOPES)
 
+        # Build params - omit scope parameter entirely for user-only OAuth
+        # Including scope="" can trigger bot scope checks requiring admin approval
         params = {
             "client_id": self.client_id,
-            "scope": "",  # Empty bot scope - required for user-only OAuth
             "user_scope": user_scopes,
             "redirect_uri": self.redirect_uri,
             "state": state
