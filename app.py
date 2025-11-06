@@ -151,66 +151,74 @@ if "slack_token" not in st.session_state or not _is_slack_authenticated_cached()
     st.markdown("""
         <style>
         .stApp {
-            background: linear-gradient(135deg, #1f77b4 0%, #0d5aa7 100%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
-        .login-box {
-            background: white;
-            border-radius: 12px;
+        div[data-testid="stVerticalBlock"] > div:has(div.element-container) {
+            background-color: white;
             padding: 3rem 2rem;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-            text-align: center;
-            margin-top: 5rem;
-        }
-        .login-logo {
-            font-size: 3.5rem;
-            margin-bottom: 1rem;
-        }
-        .login-title {
-            font-size: 1.8rem;
-            font-weight: 600;
-            color: #1f77b4;
-            margin-bottom: 0.5rem;
-        }
-        .login-subtitle {
-            color: #666;
-            margin-bottom: 2rem;
-        }
-        .slack-button {
-            display: inline-block;
-            background: #1f77b4;
-            color: white;
-            padding: 12px 40px;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: 600;
-            transition: all 0.2s;
-        }
-        .slack-button:hover {
-            background: #0d5aa7;
-            transform: translateY(-1px);
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
         }
         </style>
     """, unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns([1, 1.5, 1])
+    st.write("")
+    st.write("")
+    st.write("")
+
+    col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
-        st.markdown("""
-            <div class="login-box">
-                <div class="login-logo">💬</div>
-                <div class="login-title">Internal PM Chat</div>
-                <div class="login-subtitle">Sign in to continue</div>
-        """, unsafe_allow_html=True)
+        st.markdown("<div style='text-align: center; font-size: 4rem; margin-bottom: 1rem;'>💬</div>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; color: #1a202c; margin-bottom: 0.5rem;'>Internal PM Chat</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #718096; margin-bottom: 2rem;'>Your unified workspace for Slack conversations, Confluence docs, and team knowledge</p>", unsafe_allow_html=True)
 
         try:
             oauth_url = get_oauth_url()
             st.markdown(f"""
-                <a href="{oauth_url}" class="slack-button">Sign in with Slack</a>
-            </div>
+                <div style='text-align: center; margin: 2rem 0;'>
+                    <a href="{oauth_url}"
+                       style='display: inline-block;
+                              background: #4A154B;
+                              color: white;
+                              padding: 12px 32px;
+                              border-radius: 8px;
+                              text-decoration: none;
+                              font-weight: 600;
+                              font-size: 1rem;
+                              transition: background 0.3s;'>
+                        Sign in with Slack
+                    </a>
+                </div>
             """, unsafe_allow_html=True)
         except Exception:
-            st.markdown("</div>", unsafe_allow_html=True)
             st.error("OAuth configuration missing")
+
+        st.write("")
+        st.markdown("---")
+
+        st.markdown("### Why Sign in with Slack?")
+
+        col_a, col_b = st.columns([1, 9])
+        with col_a:
+            st.write("🔒")
+        with col_b:
+            st.markdown("**Private Channel Access**  \nSearch your private channels and conversations securely")
+
+        col_a, col_b = st.columns([1, 9])
+        with col_a:
+            st.write("🎯")
+        with col_b:
+            st.markdown("**Personalized Results**  \nGet search results tailored to your permissions")
+
+        col_a, col_b = st.columns([1, 9])
+        with col_a:
+            st.write("⚡")
+        with col_b:
+            st.markdown("**Unified Search**  \nSearch across Slack, Confluence, and documentation")
+
+        st.write("")
+        st.caption("🔐 Secured by Slack OAuth 2.0")
 
     st.stop()
 
