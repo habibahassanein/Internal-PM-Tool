@@ -133,7 +133,7 @@ class SessionManager:
         now = datetime.utcnow().isoformat()
 
         try:
-            # Check if user exists
+            # Check if user exists by user_id
             cursor.execute("SELECT login_count FROM users WHERE user_id = ?", (user_id,))
             result = cursor.fetchone()
 
@@ -142,15 +142,29 @@ class SessionManager:
                 login_count = result[0] + 1
                 cursor.execute("""
                     UPDATE users
-                    SET name = ?, picture = ?, last_login_at = ?, login_count = ?
+                    SET email = ?, name = ?, picture = ?, last_login_at = ?, login_count = ?
                     WHERE user_id = ?
-                """, (name, picture, now, login_count, user_id))
+                """, (email, name, picture, now, login_count, user_id))
             else:
-                # Create new user
-                cursor.execute("""
-                    INSERT INTO users (user_id, email, name, picture, first_login_at, last_login_at, login_count)
-                    VALUES (?, ?, ?, ?, ?, ?, 1)
-                """, (user_id, email, name, picture, now, now))
+                # Check if email exists (user might have logged in with different OAuth provider)
+                cursor.execute("SELECT user_id, login_count FROM users WHERE email = ?", (email,))
+                email_result = cursor.fetchone()
+
+                if email_result:
+                    # User exists with this email but different user_id - update to new user_id
+                    old_user_id = email_result[0]
+                    login_count = email_result[1] + 1
+                    cursor.execute("""
+                        UPDATE users
+                        SET user_id = ?, name = ?, picture = ?, last_login_at = ?, login_count = ?
+                        WHERE email = ?
+                    """, (user_id, name, picture, now, login_count, email))
+                else:
+                    # Create new user
+                    cursor.execute("""
+                        INSERT INTO users (user_id, email, name, picture, first_login_at, last_login_at, login_count)
+                        VALUES (?, ?, ?, ?, ?, ?, 1)
+                    """, (user_id, email, name, picture, now, now))
 
             conn.commit()
             return user_id
