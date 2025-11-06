@@ -1,5 +1,6 @@
 import os
 import html
+import logging
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -11,6 +12,9 @@ from src.storage.cache_manager import (
 )
 from src.agent import create_pm_agent
 from src.auth import get_auth_handler, get_session_manager
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 # =========================
 # Environment & Config
