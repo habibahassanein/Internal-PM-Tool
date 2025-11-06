@@ -15,7 +15,7 @@ from langchain.agents import create_react_agent, AgentExecutor
 from langchain_core.prompts import PromptTemplate
 
 from ..handler.confluence_handler import search_confluence, search_confluence_optimized as confluence_optimized_handler
-from ..handler.slack_handler import search_slack_simplified
+from ..handler.slack_handler import search_slack
 from ..handler.intent_analyzer import analyze_user_intent
 from ..storage.cache_manager import get_cached_search_results, cache_search_results
 
@@ -150,8 +150,11 @@ def search_slack_tool(
 
     logger.info(f"Optimized Slack search with keywords: {keywords}, channel_filter: {channel_filter}")
 
-    # Use the simplified search
-    results = search_slack_simplified(query, intent_data, max_results)
+    # Use the search_slack function with user_token from session state
+    import streamlit as st
+    user_token = st.session_state.get("slack_token") if hasattr(st, 'session_state') else None
+
+    results = search_slack(query, intent_data, max_results, user_token)
 
     # Convert to legacy format for compatibility
     legacy_results = []

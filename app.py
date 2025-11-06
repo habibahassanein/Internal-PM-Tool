@@ -11,7 +11,7 @@ from src.storage.cache_manager import (
     get_cache_manager
 )
 from src.agent import create_pm_agent
-from src.auth import get_auth_handler, get_session_manager
+from src.auth import get_slack_auth_handler, get_session_manager
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -31,19 +31,20 @@ st.set_page_config(
 )
 
 # =========================
-# Authentication
+# Slack Authentication
 # =========================
 
-# Initialize authentication handler
-auth_handler = get_auth_handler()
+# Initialize Slack authentication handler
+slack_auth = get_slack_auth_handler()
 session_manager = get_session_manager()
 
-# Require authentication before proceeding
-if not auth_handler.require_auth():
+# Require Slack authentication before proceeding
+if not slack_auth.require_auth():
     st.stop()
 
-# Get authenticated user info
-user_info = auth_handler.get_user_info()
+# Get authenticated Slack user info
+user_info = slack_auth.get_user_info()
+team_info = slack_auth.get_team_info()
 
 # Create or update session
 if "auth_session_id" not in st.session_state:
@@ -55,7 +56,7 @@ session_manager.update_session_activity(st.session_state.auth_session_id)
 # Validate session is still active
 if not session_manager.is_session_valid(st.session_state.auth_session_id):
     st.warning("Your session has expired. Please log in again.")
-    auth_handler.logout()
+    slack_auth.logout()
     st.stop()
 
 # Constants / Tunables
@@ -163,8 +164,26 @@ st.markdown('<div class="subtitle">Ask questions across Confluence, Slack, Docs,
 # =========================
 
 with st.sidebar:
-    # Show authenticated user widget
-    auth_handler.show_user_widget()
+    # Show authenticated Slack user widget
+    if user_info:
+        st.markdown("### 👤 Signed in as")
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if user_info.get("image"):
+                st.image(user_info["image"], width=50)
+        with col2:
+            st.write(f"**{user_info.get('real_name') or user_info.get('name')}**")
+            if user_info.get("email"):
+                st.caption(user_info["email"])
+
+        if team_info:
+            st.caption(f"Workspace: {team_info.get('name')}")
+
+        if st.button("🚪 Sign Out", use_container_width=True):
+            slack_auth.logout()
+            st.rerun()
+
+        st.markdown("---")
 
     st.header("Chat Configuration")
 
