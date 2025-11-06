@@ -47,11 +47,8 @@ class SlackOAuthHandler:
             "http://localhost:8501"
         )
 
-        if not self.client_id or not self.client_secret:
-            raise ValueError(
-                "Missing Slack OAuth credentials. Set SLACK_CLIENT_ID and SLACK_CLIENT_SECRET "
-                "in environment variables or Streamlit secrets."
-            )
+        # Store whether OAuth is properly configured
+        self.oauth_configured = bool(self.client_id and self.client_secret)
 
         # Initialize session state
         if "slack_auth_state" not in st.session_state:
@@ -222,6 +219,11 @@ class SlackOAuthHandler:
         Returns:
             True if authenticated, False if showing login UI
         """
+        # Check if OAuth is configured
+        if not self.oauth_configured:
+            self._show_setup_guide()
+            return False
+
         # Check for OAuth callback parameters in URL
         query_params = st.query_params
 
@@ -319,6 +321,69 @@ class SlackOAuthHandler:
             - Access your private channels and conversations
             - Personalized search results based on your permissions
             - Secure access with your Slack workspace credentials
+        """)
+
+    def _show_setup_guide(self) -> None:
+        """Display setup guide when OAuth credentials are not configured."""
+        st.error("⚙️ **Slack OAuth Not Configured**")
+
+        st.markdown("""
+        ## Setup Required
+
+        The application needs Slack OAuth credentials to function. Please follow these steps:
+
+        ### 1. Create a Slack App
+
+        1. Go to [https://api.slack.com/apps](https://api.slack.com/apps)
+        2. Click **"Create New App"** → **"From scratch"**
+        3. Enter App Name: `Internal PM Chat`
+        4. Select your workspace
+        5. Click **"Create App"**
+
+        ### 2. Configure OAuth & Permissions
+
+        1. Go to **"OAuth & Permissions"** in sidebar
+        2. Add Redirect URL:
+           - Local: `http://localhost:8501`
+           - Production: Your deployment URL
+        3. Add these **User Token Scopes**:
+           - `search:read`
+           - `channels:read`
+           - `channels:history`
+           - `groups:read`
+           - `groups:history`
+           - `users:read`
+           - `users:read.email`
+           - `team:read`
+
+        ### 3. Get Credentials
+
+        1. Go to **"Basic Information"**
+        2. Copy **Client ID** and **Client Secret**
+
+        ### 4. Configure Secrets
+
+        Add to `.streamlit/secrets.toml`:
+
+        ```toml
+        SLACK_CLIENT_ID = "your_client_id_here"
+        SLACK_CLIENT_SECRET = "your_client_secret_here"
+        SLACK_REDIRECT_URI = "http://localhost:8501"
+        ```
+
+        Or set environment variables:
+        ```bash
+        export SLACK_CLIENT_ID="your_client_id_here"
+        export SLACK_CLIENT_SECRET="your_client_secret_here"
+        ```
+
+        ### 5. Restart the Application
+
+        After adding credentials, restart Streamlit to apply changes.
+
+        ---
+
+        **Need help?** Check the documentation or contact your administrator.
         """)
 
 
