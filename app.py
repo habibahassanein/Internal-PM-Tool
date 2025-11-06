@@ -284,15 +284,22 @@ def render_sources(sources):
     jira_results = []
     other_sources = []
 
-    for source in sources:
+    # DEBUG: Log each source for categorization analysis
+    logger.info(f"DEBUG render_sources - Processing {len(sources)} sources")
+    for idx, source in enumerate(sources):
         # Determine source type
         source_type = source.get("source", "unknown")
         url = source.get("url", "") or source.get("permalink", "")
+        title = source.get("title", "NO_TITLE")
+        has_space = "space" in source
+
+        logger.info(f"DEBUG render_sources [{idx}] - title: {title}, url: {url}, source_type: {source_type}, has_space: {has_space}")
 
         if "channel" in source or "permalink" in source or source_type == "slack":
             slack_messages.append(source)
         elif "confluence" in url.lower() or source_type == "confluence":
             confluence_pages.append(source)
+            logger.info(f"DEBUG render_sources - CATEGORIZED AS CONFLUENCE: {title}")
         elif "zendesk" in url.lower() or source_type == "zendesk":
             zendesk_results.append(source)
         elif "jira" in url.lower() or source_type == "jira":
@@ -301,6 +308,9 @@ def render_sources(sources):
             docs_results.append(source)
         else:
             other_sources.append(source)
+            logger.info(f"DEBUG render_sources - CATEGORIZED AS OTHER: {title}")
+
+    logger.info(f"DEBUG render_sources - Final counts: Slack={len(slack_messages)}, Confluence={len(confluence_pages)}, Docs={len(docs_results)}, Zendesk={len(zendesk_results)}, Jira={len(jira_results)}, Other={len(other_sources)}")
 
     # Render Slack Messages
     with st.expander(f"💬 Slack Messages ({len(slack_messages)} found)", expanded=False):
@@ -515,13 +525,23 @@ def process_query(query: str):
                         obs_data = step.observation
                         collected = []
                         if isinstance(obs_data, list):
+                            # DEBUG: Log observation data
+                            logger.info(f"DEBUG - Observation contains {len(obs_data)} items")
+                            confluence_items = []
                             for item in obs_data:
                                 if isinstance(item, dict) and any(k in item for k in ["url", "title", "text", "permalink"]):
                                     all_sources.append(item)
                                     collected.append(item)
+                                    # Track Confluence items specifically
+                                    url = item.get("url", "") or item.get("permalink", "")
+                                    if "confluence" in url.lower() or item.get("space"):
+                                        confluence_items.append(item.get("title", "NO_TITLE"))
+                            if confluence_items:
+                                logger.info(f"DEBUG - Found {len(confluence_items)} Confluence items: {confluence_items}")
                         if collected:
                             step_sources.append(collected)
-                    except:
+                    except Exception as e:
+                        logger.error(f"DEBUG - Error extracting sources: {e}")
                         pass
 
             if "output" in chunk:
@@ -564,6 +584,13 @@ def process_query(query: str):
         # Filter sources by minimum relevance score
         # Only keep sources with score > 0.3 (if score is available)
         MIN_RELEVANCE_SCORE = 0.2  # Lowered from 0.3 to avoid filtering good results
+
+        # DEBUG: Log before filtering
+        confluence_before = [s for s in used_sources if "confluence" in (s.get("url", "") or "").lower() or s.get("space")]
+        logger.info(f"DEBUG - Before filtering: {len(used_sources)} total sources, {len(confluence_before)} Confluence sources")
+        if confluence_before:
+            logger.info(f"DEBUG - Confluence titles before filter: {[s.get('title', 'NO_TITLE') for s in confluence_before]}")
+
         filtered_sources = []
         for source in used_sources:
             score = source.get("score", 1.0)  # Default to 1.0 if no score
@@ -573,6 +600,12 @@ def process_query(query: str):
                 # Keep sources without numeric scores
                 filtered_sources.append(source)
         used_sources = filtered_sources
+
+        # DEBUG: Log after filtering
+        confluence_after = [s for s in used_sources if "confluence" in (s.get("url", "") or "").lower() or s.get("space")]
+        logger.info(f"DEBUG - After filtering: {len(used_sources)} total sources, {len(confluence_after)} Confluence sources")
+        if confluence_after:
+            logger.info(f"DEBUG - Confluence titles after filter: {[s.get('title', 'NO_TITLE') for s in confluence_after]}")
 
         # Check if answer indicates no relevant information found
         # If so, don't show sources (they're not actually relevant)
@@ -686,6 +719,11 @@ if prompt := st.chat_input("Ask a question about your PM tools and processes..."
 
         # Display sources
         if response["sources"]:
+            # DEBUG: Log what's being passed to render_sources
+            confluence_in_response = [s for s in response["sources"] if "confluence" in (s.get("url", "") or "").lower() or s.get("space")]
+            logger.info(f"DEBUG - Passing to render_sources: {len(response['sources'])} total, {len(confluence_in_response)} Confluence")
+            if confluence_in_response:
+                logger.info(f"DEBUG - Confluence titles in render_sources: {[s.get('title', 'NO_TITLE') for s in confluence_in_response]}")
             render_sources(response["sources"])
 
         # Show cache indicator

@@ -88,6 +88,13 @@ def search_confluence_tool(
 
         logger.info(f"Confluence search returned {len(results)} results")
 
+        # DEBUG: Print actual results structure to understand what's being returned
+        if results:
+            logger.info(f"DEBUG - First Confluence result: {results[0]}")
+            logger.info(f"DEBUG - All result titles: {[r.get('title', 'NO_TITLE') for r in results]}")
+        else:
+            logger.warning(f"DEBUG - Confluence returned empty list for query: {query}")
+
         return results
 
     except Exception as e:
@@ -519,13 +526,26 @@ CRITICAL SEARCH STRATEGY:
 - If one tool returns 0 results, that's fine - combine results from other tools
 - After searching all sources, synthesize a comprehensive answer from ALL results
 
-RESPONSE FORMAT:
-- Provide clear, actionable answers based ONLY on the search results
-- If the search results are not relevant to the question, say "I couldn't find relevant information"
-- DO NOT cite sources if they don't actually answer the question
-- ONLY cite specific sources (channel names, page titles) that directly address the user's question
-- Include recommendations from Zendesk/Jira tickets when relevant
-- If you cannot answer the question with the available results, be honest about it
+CRITICAL RESPONSE RULES:
+1. NEVER HALLUCINATE OR INVENT SOURCES
+   - If a tool returns empty results [], DO NOT make up page names or references
+   - If Confluence returns 0 results, say "No Confluence pages found"
+   - If Slack returns 0 results, say "No Slack messages found"
+
+2. ONLY CITE ACTUAL SEARCH RESULTS
+   - Use ONLY the exact titles, channel names, and URLs from the Observation
+   - If you cannot see a source in the Observation, it does not exist
+   - DO NOT reference sources that are not in the actual tool output
+
+3. BE HONEST ABOUT EMPTY RESULTS
+   - If all tools return empty results, say "I couldn't find any information"
+   - If results exist but don't answer the question, say "The results don't address your specific question"
+   - Never pretend to have information you don't actually have
+
+4. RESPONSE FORMAT
+   - Base your answer ONLY on what you see in the Observations
+   - Include recommendations from Zendesk/Jira tickets when they exist in results
+   - Cite specific sources with exact names from the tool output
 
 Use the following format:
 
