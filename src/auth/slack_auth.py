@@ -102,7 +102,11 @@ class SlackOAuthHandler:
         }
 
         auth_url = f"https://slack.com/oauth/v2/authorize?{urlencode(params)}"
-
+        
+        # Debug logging to help diagnose OAuth issues
+        logger.info(f"Generated OAuth URL parameters: {params}")
+        logger.info(f"OAuth URL (first 100 chars): {auth_url[:100]}...")
+        
         return auth_url
 
     def handle_callback(self, code: str, state: str) -> bool:
@@ -291,6 +295,11 @@ class SlackOAuthHandler:
 
             # Generate auth URL
             auth_url = self.generate_authorization_url()
+            
+            # Debug: Show OAuth URL in expander (for troubleshooting)
+            with st.expander("🔍 Debug: View OAuth URL (for troubleshooting)", expanded=False):
+                st.code(auth_url, language=None)
+                st.caption("Check this URL - it should NOT contain a 'scope' parameter, only 'user_scope'")
 
             # Sign in button with better styling
             st.markdown(f"""
@@ -362,7 +371,10 @@ class SlackOAuthHandler:
         2. Add Redirect URL:
            - Local: `http://localhost:8501`
            - Production: Your deployment URL
-        3. Add these **User Token Scopes**:
+        3. **IMPORTANT**: Make sure **Bot Token Scopes** section is **EMPTY**
+           - If you have any bot scopes listed, remove them all
+           - Bot scopes require admin approval even if not requested in the URL
+        4. Add these **User Token Scopes** (ONLY):
            - `search:read`
            - `channels:read`
            - `channels:history`
@@ -371,6 +383,7 @@ class SlackOAuthHandler:
            - `users:read`
            - `users:read.email`
            - `team:read`
+        5. **DO NOT** add any scopes to the "Bot Token Scopes" section
 
         ### 3. Get Credentials
 
@@ -398,6 +411,32 @@ class SlackOAuthHandler:
         After adding credentials, restart Streamlit to apply changes.
 
         ---
+
+        ### Troubleshooting: Admin Approval Required
+
+        If you're still being asked for admin approval, check these:
+
+        1. **Check Bot Token Scopes in Slack App Settings**:
+           - Go to **"OAuth & Permissions"** → **"Bot Token Scopes"**
+           - **This section MUST be EMPTY** - remove ALL bot scopes if any are listed
+           - Even if your code doesn't request bot scopes, having them configured requires admin approval
+
+        2. **Check Workspace Settings**:
+           - Your workspace might have "Admin-Approved Apps" enabled
+           - Go to **Workspace Settings** → **Permissions** → **Apps**
+           - Check if "Admin-Approved Apps" is enabled
+           - If enabled, you'll need admin approval regardless of scopes
+
+        3. **Verify OAuth URL**:
+           - Click the debug expander on the login page to see the generated OAuth URL
+           - The URL should contain `user_scope=...` but **NOT** `scope=...`
+           - If you see `scope=` in the URL, that's the problem
+
+        4. **Compare with Farah's App**:
+           - Check Farah's Slack app settings in [api.slack.com/apps](https://api.slack.com/apps)
+           - Ensure your app has the same configuration:
+             - Bot Token Scopes: **EMPTY**
+             - User Token Scopes: **Only the scopes listed above**
 
         **Need help?** Check the documentation or contact your administrator.
         """)

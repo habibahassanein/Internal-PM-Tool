@@ -11,7 +11,13 @@ from src.storage.cache_manager import (
     get_cache_manager
 )
 from src.agent import create_pm_agent
-from src.auth import get_slack_auth_handler, get_session_manager
+from src.auth import get_session_manager
+from src.handler.oauth_handler import (
+    get_oauth_url,
+    exchange_code_for_token,
+    get_user_info,
+    is_token_valid,
+)
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -31,20 +37,169 @@ st.set_page_config(
 )
 
 # =========================
-# Slack Authentication
+# Slack Authentication (using Farah's oauth_handler approach)
 # =========================
 
-# Initialize Slack authentication handler
-slack_auth = get_slack_auth_handler()
-session_manager = get_session_manager()
+import time
 
-# Require Slack authentication before proceeding
-if not slack_auth.require_auth():
+def _is_slack_authenticated_cached() -> bool:
+    """Check if Slack token is valid with caching to avoid repeated API calls."""
+    token = st.session_state.get("slack_token", "")
+    if not token:
+        st.session_state["slack_token_valid"] = False
+        return False
+    now = time.time()
+    last_checked = st.session_state.get("slack_token_checked_at", 0)
+    # Revalidate at most every 30 minutes
+    if st.session_state.get("slack_token_valid") is not None and (now - last_checked) < 1800:
+        return bool(st.session_state.get("slack_token_valid"))
+    valid = False
+    try:
+        valid = is_token_valid(token)
+    except Exception:
+        valid = False
+    st.session_state["slack_token_valid"] = valid
+    st.session_state["slack_token_checked_at"] = now
+    return valid
+
+# OAuth callback handling
+try:
+    query_params = st.query_params
+except Exception:
+    query_params = {}
+
+if "code" in query_params:
+    try:
+        oauth_code = query_params.get("code", "")
+        
+        # Check if we already have a valid token (avoid reprocessing)
+        if st.session_state.get("slack_token") and _is_slack_authenticated_cached():
+            logger.info("Already have valid Slack token, skipping OAuth processing")
+            try:
+                st.query_params.clear()
+            except Exception:
+                pass
+        else:
+            # Validate state to avoid CSRF; if expected missing (e.g., cloud restart), allow once
+            returned_state = query_params.get("state", "")
+            expected_state = st.session_state.get("slack_oauth_state", "")
+            if expected_state and returned_state != expected_state:
+                st.error("❌ Authentication failed: invalid_state. Please try again.")
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+                st.stop()
+
+            # Check if this code was already processed
+            processed_code = st.session_state.get("processed_oauth_code", "")
+            if processed_code == oauth_code:
+                logger.info("OAuth code already processed, clearing params and continuing")
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+            else:
+                # Process the OAuth code
+                logger.info("Processing OAuth code...")
+                token = exchange_code_for_token(oauth_code)
+                user_info_dict = get_user_info(token)
+                st.session_state["slack_token"] = token
+                st.session_state["slack_user_name"] = user_info_dict.get("name", "User")
+                st.session_state["slack_user_display_name"] = user_info_dict.get("display_name") or user_info_dict.get("name", "User")
+                st.session_state["slack_user_id"] = user_info_dict.get("id", "")
+                st.session_state["slack_user_email"] = user_info_dict.get("email", "")
+                st.session_state["slack_user_real_name"] = user_info_dict.get("real_name", "")
+                st.session_state["processed_oauth_code"] = oauth_code  # Mark code as processed
+                
+                logger.info(f"Slack OAuth successful for user: {st.session_state['slack_user_display_name']}")
+                
+                # Clear URL params BEFORE showing success message
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+                
+                st.success(f"✅ Connected as {st.session_state['slack_user_display_name']}")
+                # Rerun to reload page without OAuth params
+                st.rerun()
+    except Exception as e:
+        msg = str(e)
+        logger.error(f"OAuth error: {msg}", exc_info=True)
+        if "invalid_code" in msg.lower() or "already_used" in msg.lower():
+            # Clear the processed code flag so user can try again
+            if "processed_oauth_code" in st.session_state:
+                del st.session_state["processed_oauth_code"]
+            st.warning("OAuth code expired or already used. Please click Connect to Slack again.")
+            try:
+                st.query_params.clear()
+            except Exception:
+                pass
+            if "slack_oauth_state" in st.session_state:
+                del st.session_state["slack_oauth_state"]
+        else:
+            st.error(f"❌ Authentication failed: {msg}")
+            logger.error(f"OAuth authentication failed: {msg}", exc_info=True)
+            try:
+                st.query_params.clear()
+            except Exception:
+                pass
+
+# Auth gate: require Slack token to proceed
+if "slack_token" not in st.session_state or not _is_slack_authenticated_cached():
+    # Show login UI
+    st.markdown("""
+        <style>
+        .stApp {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    st.write("")
+    st.write("")
+    st.write("")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("<div style='text-align: center; font-size: 4rem; margin-bottom: 1rem;'>💬</div>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; color: #1a202c; margin-bottom: 0.5rem;'>Internal PM Chat</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #718096; margin-bottom: 2rem;'>Your unified workspace for Slack conversations, Confluence docs, and team knowledge</p>", unsafe_allow_html=True)
+        
+        try:
+            oauth_url = get_oauth_url()
+            st.markdown(f"""
+                <div style='text-align: center; margin: 2rem 0;'>
+                    <a href="{oauth_url}"
+                       style='display: inline-block;
+                              background: #4A154B;
+                              color: white;
+                              padding: 12px 32px;
+                              border-radius: 8px;
+                              text-decoration: none;
+                              font-weight: 600;
+                              font-size: 1rem;'>
+                        Sign in with Slack
+                    </a>
+                </div>
+            """, unsafe_allow_html=True)
+        except Exception:
+            st.info("To enable Slack login, set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, and SLACK_REDIRECT_URI in st.secrets or environment.")
+    
     st.stop()
 
-# Get authenticated Slack user info
-user_info = slack_auth.get_user_info()
-team_info = slack_auth.get_team_info()
+# Get authenticated user info for session management
+user_info = {
+    "id": st.session_state.get("slack_user_id", ""),
+    "name": st.session_state.get("slack_user_name", ""),
+    "display_name": st.session_state.get("slack_user_display_name", ""),
+    "real_name": st.session_state.get("slack_user_real_name", ""),
+    "email": st.session_state.get("slack_user_email", ""),
+}
+
+# Initialize session manager
+session_manager = get_session_manager()
 
 # Create or update session
 if "auth_session_id" not in st.session_state:
@@ -56,8 +211,10 @@ session_manager.update_session_activity(st.session_state.auth_session_id)
 # Validate session is still active
 if not session_manager.is_session_valid(st.session_state.auth_session_id):
     st.warning("Your session has expired. Please log in again.")
-    slack_auth.logout()
-    st.stop()
+    # Clear Slack token
+    if "slack_token" in st.session_state:
+        del st.session_state["slack_token"]
+    st.rerun()
 
 # Constants / Tunables
 LLM_NAME = "Gemini 2.0 Flash Experimental"
@@ -165,22 +322,32 @@ st.markdown('<div class="subtitle">Ask questions across Confluence, Slack, Docs,
 
 with st.sidebar:
     # Show authenticated Slack user widget
-    if user_info:
+    if user_info and user_info.get("id"):
         st.markdown("### 👤 Signed in as")
         col1, col2 = st.columns([1, 3])
         with col1:
-            if user_info.get("image"):
-                st.image(user_info["image"], width=50)
+            # User avatar placeholder (Farah's oauth_handler doesn't return image)
+            st.markdown("👤")
         with col2:
-            st.write(f"**{user_info.get('real_name') or user_info.get('name')}**")
+            display_name = user_info.get("display_name") or user_info.get("real_name") or user_info.get("name") or "User"
+            st.write(f"**{display_name}**")
             if user_info.get("email"):
                 st.caption(user_info["email"])
 
-        if team_info:
-            st.caption(f"Workspace: {team_info.get('name')}")
-
         if st.button("🚪 Sign Out", use_container_width=True):
-            slack_auth.logout()
+            # Clear Slack token
+            if "slack_token" in st.session_state:
+                del st.session_state["slack_token"]
+            if "slack_user_name" in st.session_state:
+                del st.session_state["slack_user_name"]
+            if "slack_user_display_name" in st.session_state:
+                del st.session_state["slack_user_display_name"]
+            if "slack_user_id" in st.session_state:
+                del st.session_state["slack_user_id"]
+            if "slack_user_email" in st.session_state:
+                del st.session_state["slack_user_email"]
+            if "slack_user_real_name" in st.session_state:
+                del st.session_state["slack_user_real_name"]
             st.rerun()
 
         st.markdown("---")
