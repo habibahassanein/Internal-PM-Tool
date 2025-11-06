@@ -194,6 +194,104 @@ def extract_keywords_smart(text: str, min_length: int = 3, max_keywords: int = 1
     return unique_keywords[:max_keywords]
 
 
+def detect_source_preference(user_query: str) -> Dict[str, int]:
+    """
+    Detect which data sources the user wants to prioritize based on query content.
+    
+    Returns a dictionary mapping source names to priority scores (higher = more priority).
+    Sources: slack, docs, confluence, zendesk, jira
+    """
+    query_lower = user_query.lower()
+    source_scores = {
+        "slack": 0,
+        "docs": 0,
+        "confluence": 0,
+        "zendesk": 0,
+        "jira": 0
+    }
+    
+    # Slack indicators
+    slack_patterns = [
+        r'\bslack\b',
+        r'\bchannel\b',
+        r'\bmessage\b',
+        r'\bconversation\b',
+        r'\bdiscussion\b',
+        r'\bannouncement\b',
+        r'\bteam chat\b',
+        r'#\w+',  # Channel mentions like #engineering
+    ]
+    for pattern in slack_patterns:
+        if re.search(pattern, query_lower):
+            source_scores["slack"] += 2
+    
+    # Docs indicators
+    docs_patterns = [
+        r'\bdocs?\b',
+        r'\bdocumentation\b',
+        r'\bknowledge base\b',
+        r'\bkb\b',
+        r'\bcommunity\b',
+        r'\bsupport article\b',
+        r'\bhelp article\b',
+        r'\bguide\b',
+        r'\btutorial\b',
+    ]
+    for pattern in docs_patterns:
+        if re.search(pattern, query_lower):
+            source_scores["docs"] += 2
+    
+    # Confluence indicators
+    confluence_patterns = [
+        r'\bconfluence\b',
+        r'\bwiki\b',
+        r'\bpage\b',
+        r'\binternal doc\b',
+        r'\bprocess doc\b',
+        r'\bproject doc\b',
+    ]
+    for pattern in confluence_patterns:
+        if re.search(pattern, query_lower):
+            source_scores["confluence"] += 2
+    
+    # Zendesk indicators
+    zendesk_patterns = [
+        r'\bzendesk\b',
+        r'\bticket\b',
+        r'\bcustomer issue\b',
+        r'\bsupport ticket\b',
+        r'\bcustomer problem\b',
+        r'\bcustomer report\b',
+    ]
+    for pattern in zendesk_patterns:
+        if re.search(pattern, query_lower):
+            source_scores["zendesk"] += 2
+    
+    # Jira indicators
+    jira_patterns = [
+        r'\bjira\b',
+        r'\bissue\b',
+        r'\bbug\b',
+        r'\bfeature request\b',
+        r'\bepic\b',
+        r'\bstory\b',
+        r'\btask\b',
+        r'\broadmap\b',
+        r'\bbacklog\b',
+    ]
+    for pattern in jira_patterns:
+        if re.search(pattern, query_lower):
+            source_scores["jira"] += 2
+    
+    # If no explicit source mentioned, return all zeros (no prioritization)
+    max_score = max(source_scores.values())
+    if max_score == 0:
+        return source_scores
+    
+    logger.info(f"Source preference detected: {source_scores}")
+    return source_scores
+
+
 def detect_query_type(
     user_query: str, 
     conversation_history: List[Dict[str, str]],
@@ -277,6 +375,9 @@ def analyze_user_intent(
     
     # Step 1: Detect query type
     query_type_info = detect_query_type(user_query, conversation_history, last_context)
+    
+    # Step 1.5: Detect source preference
+    source_preference = detect_source_preference(user_query)
     
     # Step 2: Extract smart keywords
     smart_keywords = extract_keywords_smart(user_query)
@@ -444,6 +545,9 @@ Return ONLY the JSON response.
         intent_data["query_type"] = query_type_info["query_type"]
         intent_data["needs_fresh_data"] = query_type_info["needs_fresh_data"]
         
+        # Add source preference
+        intent_data["source_preference"] = source_preference
+        
         logger.info(f"Intent analysis result: {intent_data}")
         return intent_data
         
@@ -463,6 +567,7 @@ def _get_default_intent() -> Dict[str, Any]:
         "query_type": "new_search",
         "needs_fresh_data": True,
         "data_sources": ["slack", "confluence"],
+        "source_preference": {"slack": 0, "docs": 0, "confluence": 0, "zendesk": 0, "jira": 0},
         "slack_params": {
             "channels": "all",
             "time_range": "all",  # No time restrictions - search all available history
@@ -536,6 +641,7 @@ __all__ = [
     "analyze_intent",  # Backward compatibility
     "extract_keywords_smart",
     "detect_query_type",
+    "detect_source_preference",
     "validate_intent",
     "configure_genai"
 ]

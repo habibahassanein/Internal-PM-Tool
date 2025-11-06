@@ -62,7 +62,9 @@ def _get_secret_or_env(name: str, default: str = "") -> str:
         space_filter: Specific space to search (None for all spaces)
 
     Returns:
-        List of page dictionaries with metadata"""
+        List of page dictionaries with metadata
+        
+    Note: Use this tool when the query mentions "confluence", "wiki", "page", or "internal doc"."""
 )
 def search_confluence_tool(
     query: str,
@@ -97,7 +99,7 @@ def search_confluence_tool(
 
 @tool(
     "search_slack_messages",
-    description="""Search for messages in Slack across all channels.
+    description="""Search for messages in Slack across all channels (including private channels the user has access to).
 
     Args:
         query: Search query
@@ -106,7 +108,9 @@ def search_confluence_tool(
         max_age_hours: Maximum age of messages in hours (default 0 = all history)
 
     Returns:
-        List of message dictionaries with metadata"""
+        List of message dictionaries with metadata
+        
+    Note: This tool searches both public and private channels. Private channels are only included if the user is a member."""
 )
 def search_slack_tool(
     query: str,
@@ -185,7 +189,9 @@ def search_slack_tool(
         limit: Number of results to return
 
     Returns:
-        List of search results with metadata"""
+        List of search results with metadata
+        
+    Note: Use this tool when the query mentions "docs", "documentation", "knowledge base", "kb", "guide", or "tutorial"."""
 )
 def search_docs(query: str, limit: int = 5) -> List[dict]:
     """Search documents in Qdrant collection with optimized relevance scoring."""
@@ -564,7 +570,7 @@ IMPORTANT SEARCH GUIDELINES:
    - Just pass the user's question directly - no need to extract keywords
 
 2. Use `search_slack_messages` to find Slack conversations:
-   - The tool searches across all channels with intelligent keyword matching
+   - The tool searches across all channels (including private channels the user has access to) with intelligent keyword matching
    - Returns results with enriched metadata
    - Just pass the user's question directly
 
@@ -577,11 +583,24 @@ IMPORTANT SEARCH GUIDELINES:
 
 5. Use `fetch_table_data` to query data from Zendesk/Jira tables
 
-CRITICAL SEARCH STRATEGY:
-- ALWAYS search Confluence, Slack, AND Docs for EVERY question (unless user specifies otherwise)
-- Search them in parallel - don't stop after finding results in one source
-- Confluence has documentation, Slack has discussions, Docs has technical details
-- ONLY skip a source if the user explicitly says "search only X" or "don't search Y"
+CRITICAL SEARCH STRATEGY WITH SOURCE PRIORITIZATION:
+
+**Source Priority Detection:**
+- If the user's query mentions "slack", "channel", "message", "conversation", or "#channelname":
+  → PRIORITIZE searching Slack FIRST, then other sources
+- If the user's query mentions "docs", "documentation", "knowledge base", "kb", "guide", "tutorial":
+  → PRIORITIZE searching Docs FIRST, then other sources
+- If the user's query mentions "confluence", "wiki", "page", "internal doc":
+  → PRIORITIZE searching Confluence FIRST, then other sources
+- If the user's query mentions "zendesk", "ticket", "customer issue":
+  → PRIORITIZE Zendesk queries FIRST, then other sources
+- If the user's query mentions "jira", "issue", "bug", "feature request", "roadmap":
+  → PRIORITIZE Jira queries FIRST, then other sources
+
+**Search Execution:**
+- When a source is prioritized, search that source FIRST and wait for results
+- After getting prioritized source results, search other relevant sources
+- If no source is explicitly mentioned, search all sources in parallel
 - Each tool automatically handles relevance scoring - trust the results
 - If one tool returns 0 results, that's fine - combine results from other tools
 - After searching all sources, synthesize a comprehensive answer from ALL results
