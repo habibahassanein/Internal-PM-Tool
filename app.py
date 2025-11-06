@@ -151,42 +151,139 @@ if "slack_token" not in st.session_state or not _is_slack_authenticated_cached()
     st.markdown("""
         <style>
         .stApp {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #4A154B 0%, #611f69 50%, #4A154B 100%);
+            min-height: 100vh;
+        }
+        .login-container {
+            background: white;
+            padding: 3rem 2.5rem;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .login-logo {
+            text-align: center;
+            font-size: 5rem;
+            margin-bottom: 1rem;
+            animation: float 3s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        .login-title {
+            text-align: center;
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #1a202c;
+            margin-bottom: 0.75rem;
+        }
+        .login-subtitle {
+            text-align: center;
+            color: #718096;
+            font-size: 1.1rem;
+            margin-bottom: 2.5rem;
+            line-height: 1.6;
+        }
+        .login-features {
+            margin: 2rem 0;
+            padding: 1.5rem;
+            background: #f7fafc;
+            border-radius: 12px;
+            border-left: 4px solid #4A154B;
+        }
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0.75rem 0;
+            color: #2d3748;
+            font-size: 0.95rem;
+        }
+        .feature-icon {
+            font-size: 1.5rem;
+            min-width: 30px;
+        }
+        .slack-button {
+            display: block;
+            background: #4A154B;
+            color: white;
+            padding: 16px 40px;
+            border-radius: 12px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.1rem;
+            text-align: center;
+            margin: 2rem auto 0;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(74, 21, 75, 0.3);
+        }
+        .slack-button:hover {
+            background: #611f69;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(74, 21, 75, 0.4);
+        }
+        .powered-by {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.9rem;
+            margin-top: 2rem;
         }
         </style>
     """, unsafe_allow_html=True)
-    
+
     st.write("")
     st.write("")
     st.write("")
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
+
+    col1, col2, col3 = st.columns([1, 3, 1])
+
     with col2:
-        st.markdown("<div style='text-align: center; font-size: 4rem; margin-bottom: 1rem;'>💬</div>", unsafe_allow_html=True)
-        st.markdown("<h1 style='text-align: center; color: #1a202c; margin-bottom: 0.5rem;'>Internal PM Chat</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #718096; margin-bottom: 2rem;'>Your unified workspace for Slack conversations, Confluence docs, and team knowledge</p>", unsafe_allow_html=True)
-        
+        st.markdown("""
+            <div class="login-container">
+                <div class="login-logo">💬</div>
+                <div class="login-title">Internal PM Chat</div>
+                <div class="login-subtitle">Your AI-powered knowledge assistant</div>
+
+                <div class="login-features">
+                    <div class="feature-item">
+                        <span class="feature-icon">🔍</span>
+                        <span>Search across Slack, Confluence, Docs & more</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">🤖</span>
+                        <span>AI-powered answers with smart citations</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">⚡</span>
+                        <span>Instant access to team knowledge</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">🔒</span>
+                        <span>Secure authentication via Slack</span>
+                    </div>
+                </div>
+        """, unsafe_allow_html=True)
+
         try:
             oauth_url = get_oauth_url()
             st.markdown(f"""
-                <div style='text-align: center; margin: 2rem 0;'>
-                    <a href="{oauth_url}"
-                       style='display: inline-block;
-                              background: #4A154B;
-                              color: white;
-                              padding: 12px 32px;
-                              border-radius: 8px;
-                              text-decoration: none;
-                              font-weight: 600;
-                              font-size: 1rem;'>
-                        Sign in with Slack
-                    </a>
-                </div>
+                <a href="{oauth_url}" class="slack-button">
+                    Sign in with Slack
+                </a>
+            </div>
             """, unsafe_allow_html=True)
         except Exception:
+            st.markdown("</div>", unsafe_allow_html=True)
             st.info("To enable Slack login, set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, and SLACK_REDIRECT_URI in st.secrets or environment.")
-    
+
+        st.markdown("""
+            <div class="powered-by">
+                Powered by Gemini 2.0 Flash
+            </div>
+        """, unsafe_allow_html=True)
+
     st.stop()
 
 # Get authenticated user info for session management
