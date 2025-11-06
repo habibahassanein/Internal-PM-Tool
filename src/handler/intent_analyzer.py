@@ -23,6 +23,32 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+def _get_secret_or_env(name: str, default: str = "") -> str:
+    """
+    Get value from Streamlit secrets first, then fall back to environment variables.
+    
+    Args:
+        name: Name of the secret/environment variable
+        default: Default value if not found
+    
+    Returns:
+        Value from Streamlit secrets or environment variable
+    """
+    # Try Streamlit secrets first (if available and in Streamlit context)
+    try:
+        import streamlit as st
+        # Check if we're in a Streamlit context and if the secret exists
+        if hasattr(st, 'secrets') and name in st.secrets:
+            return st.secrets.get(name, default)
+    except Exception:
+        # Streamlit not available, not in Streamlit context, or any error
+        # Fall through to environment variables
+        pass
+    
+    # Fall back to environment variables (loaded from .env by load_dotenv())
+    return os.getenv(name, default)
+
+
 # Enhanced stopwords including technical and common words
 STOP_WORDS = {
     "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", 
@@ -65,9 +91,9 @@ def configure_genai() -> None:
             import random
             api_key = random.choice(_api_manager.api_keys)
     else:
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = _get_secret_or_env("GEMINI_API_KEY")
         if not api_key:
-            raise RuntimeError("Missing GEMINI_API_KEY environment variable.")
+            raise RuntimeError("Missing GEMINI_API_KEY in environment variables or Streamlit secrets.")
     
     genai.configure(api_key=api_key)
 

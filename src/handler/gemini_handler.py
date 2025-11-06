@@ -27,6 +27,32 @@ load_dotenv()
 _api_manager = None
 _single_api_key = None
 
+def _get_secret_or_env(name: str, default: str = "") -> str:
+    """
+    Get value from Streamlit secrets first, then fall back to environment variables.
+    
+    Args:
+        name: Name of the secret/environment variable
+        default: Default value if not found
+    
+    Returns:
+        Value from Streamlit secrets or environment variable
+    """
+    # Try Streamlit secrets first (if available and in Streamlit context)
+    try:
+        import streamlit as st
+        # Check if we're in a Streamlit context and if the secret exists
+        if hasattr(st, 'secrets') and name in st.secrets:
+            return st.secrets.get(name, default)
+    except Exception:
+        # Streamlit not available, not in Streamlit context, or any error
+        # Fall through to environment variables
+        pass
+    
+    # Fall back to environment variables (loaded from .env by load_dotenv())
+    # This will work because load_dotenv() is called at module level
+    return os.getenv(name, default)
+
 def _get_api_manager():
     """Get or create API manager instance (supports multiple keys with rotation)."""
     global _api_manager, _single_api_key
@@ -38,9 +64,9 @@ def _get_api_manager():
             logger.info(f"API Manager initialized with {len(_api_manager.api_keys)} key(s)")
         except Exception as e:
             logger.warning(f"Failed to create API manager: {e}, falling back to single key")
-            _single_api_key = os.getenv("GEMINI_API_KEY")
+            _single_api_key = _get_secret_or_env("GEMINI_API_KEY")
             if not _single_api_key:
-                raise RuntimeError("Missing GEMINI_API_KEY in environment variables")
+                raise RuntimeError("Missing GEMINI_API_KEY in environment variables or Streamlit secrets")
             logger.info("Using single API key (no rotation)")
     
     return _api_manager

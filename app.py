@@ -1,6 +1,6 @@
 import os
 import html
-import datetime
+import logging
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -11,6 +11,16 @@ from src.storage.cache_manager import (
     get_cache_manager
 )
 from src.agent import create_pm_agent
+from src.auth import get_session_manager
+from src.handler.oauth_handler import (
+    get_oauth_url,
+    exchange_code_for_token,
+    get_user_info,
+    is_token_valid,
+)
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 # =========================
 # Environment & Config
@@ -25,6 +35,219 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# =========================
+# Slack Authentication (using Farah's oauth_handler approach)
+# =========================
+
+import time
+
+def _is_slack_authenticated_cached() -> bool:
+    """Check if Slack token is valid with caching to avoid repeated API calls."""
+    token = st.session_state.get("slack_token", "")
+    if not token:
+        st.session_state["slack_token_valid"] = False
+        return False
+    now = time.time()
+    last_checked = st.session_state.get("slack_token_checked_at", 0)
+    # Revalidate at most every 30 minutes
+    if st.session_state.get("slack_token_valid") is not None and (now - last_checked) < 1800:
+        return bool(st.session_state.get("slack_token_valid"))
+    valid = False
+    try:
+        valid = is_token_valid(token)
+    except Exception:
+        valid = False
+    st.session_state["slack_token_valid"] = valid
+    st.session_state["slack_token_checked_at"] = now
+    return valid
+
+# OAuth callback handling
+try:
+    query_params = st.query_params
+except Exception:
+    query_params = {}
+
+if "code" in query_params:
+    try:
+        oauth_code = query_params.get("code", "")
+        
+        # Check if we already have a valid token (avoid reprocessing)
+        if st.session_state.get("slack_token") and _is_slack_authenticated_cached():
+            logger.info("Already have valid Slack token, skipping OAuth processing")
+            try:
+                st.query_params.clear()
+            except Exception:
+                pass
+        else:
+            # Validate state to avoid CSRF; if expected missing (e.g., cloud restart), allow once
+            returned_state = query_params.get("state", "")
+            expected_state = st.session_state.get("slack_oauth_state", "")
+            if expected_state and returned_state != expected_state:
+                st.error("❌ Authentication failed: invalid_state. Please try again.")
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+                st.stop()
+
+            # Check if this code was already processed
+            processed_code = st.session_state.get("processed_oauth_code", "")
+            if processed_code == oauth_code:
+                logger.info("OAuth code already processed, clearing params and continuing")
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+            else:
+                # Process the OAuth code
+                logger.info("Processing OAuth code...")
+                token = exchange_code_for_token(oauth_code)
+                user_info_dict = get_user_info(token)
+                st.session_state["slack_token"] = token
+                st.session_state["slack_user_name"] = user_info_dict.get("name", "User")
+                st.session_state["slack_user_display_name"] = user_info_dict.get("display_name") or user_info_dict.get("name", "User")
+                st.session_state["slack_user_id"] = user_info_dict.get("id", "")
+                st.session_state["slack_user_email"] = user_info_dict.get("email", "")
+                st.session_state["slack_user_real_name"] = user_info_dict.get("real_name", "")
+                st.session_state["processed_oauth_code"] = oauth_code  # Mark code as processed
+                
+                logger.info(f"Slack OAuth successful for user: {st.session_state['slack_user_display_name']}")
+                
+                # Clear URL params BEFORE showing success message
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+                
+                st.success(f"✅ Connected as {st.session_state['slack_user_display_name']}")
+                # Rerun to reload page without OAuth params
+                st.rerun()
+    except Exception as e:
+        msg = str(e)
+        logger.error(f"OAuth error: {msg}", exc_info=True)
+        if "invalid_code" in msg.lower() or "already_used" in msg.lower():
+            # Clear the processed code flag so user can try again
+            if "processed_oauth_code" in st.session_state:
+                del st.session_state["processed_oauth_code"]
+            st.warning("OAuth code expired or already used. Please click Connect to Slack again.")
+            try:
+                st.query_params.clear()
+            except Exception:
+                pass
+            if "slack_oauth_state" in st.session_state:
+                del st.session_state["slack_oauth_state"]
+        else:
+            st.error(f"❌ Authentication failed: {msg}")
+            logger.error(f"OAuth authentication failed: {msg}", exc_info=True)
+            try:
+                st.query_params.clear()
+            except Exception:
+                pass
+
+# Auth gate: require Slack token to proceed
+if "slack_token" not in st.session_state or not _is_slack_authenticated_cached():
+    # Show login UI
+    st.markdown("""
+        <style>
+        .stApp {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        div[data-testid="stVerticalBlock"] > div:has(div.element-container) {
+            background-color: white;
+            padding: 3rem 2rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.write("")
+    st.write("")
+    st.write("")
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+
+    with col2:
+        st.markdown("<div style='text-align: center; font-size: 4rem; margin-bottom: 1rem;'>💬</div>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; color: #1a202c; margin-bottom: 0.5rem;'>Internal PM Chat</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #718096; margin-bottom: 2rem;'>Your unified workspace for Slack conversations, Confluence docs, and team knowledge</p>", unsafe_allow_html=True)
+
+        try:
+            oauth_url = get_oauth_url()
+            st.markdown(f"""
+                <div style='text-align: center; margin: 2rem 0;'>
+                    <a href="{oauth_url}"
+                       style='display: inline-block;
+                              background: #4A154B;
+                              color: white;
+                              padding: 12px 32px;
+                              border-radius: 8px;
+                              text-decoration: none;
+                              font-weight: 600;
+                              font-size: 1rem;
+                              transition: background 0.3s;'>
+                        Sign in with Slack
+                    </a>
+                </div>
+            """, unsafe_allow_html=True)
+        except Exception:
+            st.error("OAuth configuration missing")
+
+        st.write("")
+        st.markdown("---")
+
+        st.markdown("### Why Sign in with Slack?")
+
+        col_a, col_b = st.columns([1, 9])
+        with col_a:
+            st.write("🔒")
+        with col_b:
+            st.markdown("**Private Channel Access**  \nSearch your private channels and conversations securely")
+
+        col_a, col_b = st.columns([1, 9])
+        with col_a:
+            st.write("🎯")
+        with col_b:
+            st.markdown("**Personalized Results**  \nGet search results tailored to your permissions")
+
+        col_a, col_b = st.columns([1, 9])
+        with col_a:
+            st.write("⚡")
+        with col_b:
+            st.markdown("**Unified Search**  \nSearch across Slack, Confluence, and documentation")
+
+        st.write("")
+        st.caption("🔐 Secured by Slack OAuth 2.0")
+
+    st.stop()
+
+# Get authenticated user info for session management
+user_info = {
+    "id": st.session_state.get("slack_user_id", ""),
+    "name": st.session_state.get("slack_user_name", ""),
+    "display_name": st.session_state.get("slack_user_display_name", ""),
+    "real_name": st.session_state.get("slack_user_real_name", ""),
+    "email": st.session_state.get("slack_user_email", ""),
+}
+
+# Initialize session manager
+session_manager = get_session_manager()
+
+# Create or update session
+if "auth_session_id" not in st.session_state:
+    st.session_state.auth_session_id = session_manager.create_session(user_info)
+
+# Update session activity
+session_manager.update_session_activity(st.session_state.auth_session_id)
+
+# Validate session is still active
+if not session_manager.is_session_valid(st.session_state.auth_session_id):
+    st.warning("Your session has expired. Please log in again.")
+    # Clear Slack token
+    if "slack_token" in st.session_state:
+        del st.session_state["slack_token"]
+    st.rerun()
 
 # Constants / Tunables
 LLM_NAME = "Gemini 2.0 Flash Experimental"
@@ -131,6 +354,37 @@ st.markdown('<div class="subtitle">Ask questions across Confluence, Slack, Docs,
 # =========================
 
 with st.sidebar:
+    # Show authenticated Slack user widget
+    if user_info and user_info.get("id"):
+        st.markdown("### 👤 Signed in as")
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            # User avatar placeholder (Farah's oauth_handler doesn't return image)
+            st.markdown("👤")
+        with col2:
+            display_name = user_info.get("display_name") or user_info.get("real_name") or user_info.get("name") or "User"
+            st.write(f"**{display_name}**")
+            if user_info.get("email"):
+                st.caption(user_info["email"])
+
+        if st.button("🚪 Sign Out", use_container_width=True):
+            # Clear Slack token
+            if "slack_token" in st.session_state:
+                del st.session_state["slack_token"]
+            if "slack_user_name" in st.session_state:
+                del st.session_state["slack_user_name"]
+            if "slack_user_display_name" in st.session_state:
+                del st.session_state["slack_user_display_name"]
+            if "slack_user_id" in st.session_state:
+                del st.session_state["slack_user_id"]
+            if "slack_user_email" in st.session_state:
+                del st.session_state["slack_user_email"]
+            if "slack_user_real_name" in st.session_state:
+                del st.session_state["slack_user_real_name"]
+            st.rerun()
+
+        st.markdown("---")
+
     st.header("Chat Configuration")
 
     st.info("""
@@ -222,189 +476,195 @@ def _ensure_gemini_key_if_needed():
 # Helper Functions
 # =========================
 
+def _clean_slack_text(text: str) -> str:
+    """Clean Slack message formatting."""
+    import re
+
+    text = re.sub(r'<#[A-Z0-9]+\|([^>]+)>', r'#\1', text)
+    text = re.sub(r'<(https?://[^|>]+)\|([^>]+)>', r'\2 (\1)', text)
+    text = re.sub(r'<(https?://[^>]+)>', r'\1', text)
+    text = re.sub(r'<@[A-Z0-9]+\|([^>]+)>', r'@\1', text)
+    text = re.sub(r'<@([A-Z0-9]+)>', r'@unknown_user', text)
+    text = text.replace('<!channel>', '@channel')
+    text = text.replace('<!here>', '@here')
+    text = text.replace('<!everyone>', '@everyone')
+
+    return text
+
+
 def render_sources(sources):
-    """Render source citations grouped by type in expandable tabs."""
+    """Render source citations grouped by type in separate expanders."""
     if not sources:
         return
-    
-    def categorize_source(source):
-        """Categorize a source into one of the 5 groups."""
-        url = (source.get("url") or source.get("permalink") or "").lower()
-        source_field = source.get("source", "").lower()
-        
-        # 1. Check for Slack
-        if "channel" in source or "permalink" in source or source_field == "slack":
-            return "slack"
-        
-        # 2. Check for Confluence
-        if "confluence" in url or source_field == "confluence":
-            return "confluence"
-        
-        # 3. Check for knowledge_base and subcategorize by URL
-        if source_field == "knowledge_base" or (url.startswith("http") and source_field != "slack"):
-            # Pattern matching for knowledge_base URLs
-            if any(pattern in url for pattern in ["docs.incorta.com", "/docs/", "documentation"]):
-                return "incorta_docs"
-            elif any(pattern in url for pattern in ["community.incorta.com", "/community/"]):
-                return "incorta_community"
-            elif any(pattern in url for pattern in ["support.incorta.com", "/support/"]):
-                return "incorta_support"
-            else:
-                # Skip sources that don't match any pattern (per preference #2)
-                return None
-        
-        # 4. Check for Zendesk (support-related)
-        if "zendesk" in url or source_field == "zendesk":
-            return "incorta_support"
-        
-        # 5. Skip unknown sources (per preference #2)
-        return None
-    
-    def format_date(source, category):
-        """Format date from source based on category."""
-        if category == "slack":
-            # Slack has 'ts' (timestamp) or 'date' (formatted string)
-            if "ts" in source:
-                try:
-                    ts = float(source.get("ts"))
-                    dt = datetime.datetime.fromtimestamp(ts)
-                    return dt.strftime("%b %d, %Y")
-                except (ValueError, TypeError):
-                    pass
-            if "date" in source:
-                date_str = source.get("date", "")
-                if date_str and date_str != "Unknown date":
-                    try:
-                        # Try to parse if it's a formatted string
-                        dt = datetime.datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-                        return dt.strftime("%b %d, %Y")
-                    except (ValueError, TypeError):
-                        return date_str
-            return None
-        elif category == "confluence":
-            # Confluence has 'last_modified'
-            last_modified = source.get("last_modified", "")
-            if last_modified and last_modified != "Recent":
-                try:
-                    # Try to parse ISO format or other formats
-                    if isinstance(last_modified, str):
-                        # Try common date formats
-                        for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
-                            try:
-                                dt = datetime.datetime.strptime(last_modified.split(".")[0], fmt)
-                                return dt.strftime("%b %d, %Y")
-                            except ValueError:
-                                continue
-                        return last_modified
-                except (ValueError, TypeError):
-                    pass
-            return None
+
+    import re
+
+    # Categorize sources by type
+    slack_messages = []
+    confluence_pages = []
+    docs_results = []
+    zendesk_results = []
+    jira_results = []
+    other_sources = []
+
+    # DEBUG: Log each source for categorization analysis
+    logger.info(f"DEBUG render_sources - Processing {len(sources)} sources")
+    for idx, source in enumerate(sources):
+        # Determine source type
+        source_type = source.get("source", "unknown")
+        url = source.get("url", "") or source.get("permalink", "")
+        title = source.get("title", "NO_TITLE")
+        has_space = "space" in source
+
+        logger.info(f"DEBUG render_sources [{idx}] - title: {title}, url: {url}, source_type: {source_type}, has_space: {has_space}")
+
+        # Prioritize source field check first for accurate categorization
+        if "channel" in source or "permalink" in source or source_type == "slack":
+            slack_messages.append(source)
+        elif source_type == "confluence" or ("confluence" in url.lower() and source_type != "knowledge_base"):
+            confluence_pages.append(source)
+            logger.info(f"DEBUG render_sources - CATEGORIZED AS CONFLUENCE: {title}")
+        elif source_type == "zendesk" or ("zendesk" in url.lower() and source_type != "knowledge_base"):
+            zendesk_results.append(source)
+        elif source_type == "jira" or ("jira" in url.lower() and source_type != "knowledge_base"):
+            jira_results.append(source)
+        elif source_type == "knowledge_base" or (url.startswith("http") and source_type not in ["slack", "confluence", "zendesk", "jira"]):
+            docs_results.append(source)
+            logger.info(f"DEBUG render_sources - CATEGORIZED AS KNOWLEDGE_BASE: {title}")
         else:
-            # For docs, community, support - check for common date fields
-            for field in ["date", "last_modified", "updated", "created"]:
-                if field in source:
-                    date_val = source.get(field)
-                    if date_val:
-                        try:
-                            if isinstance(date_val, (int, float)):
-                                dt = datetime.datetime.fromtimestamp(date_val)
-                                return dt.strftime("%b %d, %Y")
-                            elif isinstance(date_val, str):
-                                for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
-                                    try:
-                                        dt = datetime.datetime.strptime(date_val.split(".")[0], fmt)
-                                        return dt.strftime("%b %d, %Y")
-                                    except ValueError:
-                                        continue
-                                return date_val
-                        except (ValueError, TypeError):
-                            pass
-            return None
-    
-    # Group sources by category
-    grouped_sources = {
-        "slack": [],
-        "confluence": [],
-        "incorta_docs": [],
-        "incorta_community": [],
-        "incorta_support": []
-    }
-    
-    # Deduplicate and group (skip sources that return None from categorization)
-    seen_urls = set()
-    for source in sources:
-        category = categorize_source(source)
-        if category is None:  # Skip sources that don't match any pattern
-            continue
-        
-        url = source.get("url") or source.get("permalink") or ""
-        if url and url in seen_urls:
-            continue
-        if url:
-            seen_urls.add(url)
-        
-        grouped_sources[category].append(source)
-    
-    # Sort each group by score (highest first) - per preference #3
-    def sort_by_score(sources):
-        return sorted(sources, key=lambda s: float(s.get("score", 0.0)), reverse=True)
-    
-    for category in grouped_sources:
-        grouped_sources[category] = sort_by_score(grouped_sources[category])
-    
-    # Category labels and icons
-    category_config = {
-        "slack": {"label": "Slack", "icon": "💬"},
-        "confluence": {"label": "Confluence", "icon": "📖"},
-        "incorta_docs": {"label": "Incorta Docs", "icon": "📚"},
-        "incorta_community": {"label": "Incorta Community", "icon": "👥"},
-        "incorta_support": {"label": "Incorta Support", "icon": "🎫"}
-    }
-    
-    # Calculate total sources (only from non-empty categories)
-    total_sources = sum(len(sources) for sources in grouped_sources.values())
-    if total_sources == 0:
-        return
-    
-    # Display grouped sources
-    st.markdown(f"### 📚 Sources ({total_sources})")
-    
-    # Create expandable sections for each category (only show non-empty ones - per preference #4)
-    for category, category_sources in grouped_sources.items():
-        if not category_sources:  # Hide empty categories
-            continue
-        
-        config = category_config[category]
-        count = len(category_sources)
-        
-        with st.expander(f"{config['icon']} {config['label']} ({count})", expanded=False):
-            for i, source in enumerate(category_sources, 1):
-                # Determine title
-                if category == "slack":
-                    channel = source.get("channel", "unknown")
-                    username = source.get("username", "unknown")
-                    title = f"#{channel} - @{username}"
-                else:
-                    title = source.get("title", "Untitled")
-                
-                # Build URL
-                url = source.get("url") or source.get("permalink") or ""
-                
-                # Format date
-                date_str = format_date(source, category)
-                date_display = f' <small style="color: #888;">• {date_str}</small>' if date_str else ""
-                
-                # Build evidence/text snippet
-                evidence = source.get("text", "") or source.get("excerpt", "")
-                if len(evidence) > 200:
-                    evidence = evidence[:200] + "..."
-                
-                # Render citation card
+            other_sources.append(source)
+            logger.info(f"DEBUG render_sources - CATEGORIZED AS OTHER: {title}")
+
+    logger.info(f"DEBUG render_sources - Final counts: Slack={len(slack_messages)}, Confluence={len(confluence_pages)}, Docs={len(docs_results)}, Zendesk={len(zendesk_results)}, Jira={len(jira_results)}, Other={len(other_sources)}")
+
+    # Render Slack Messages
+    with st.expander(f"💬 Slack Messages ({len(slack_messages)} found)", expanded=False):
+        if not slack_messages:
+            st.info("No Slack results found.")
+        else:
+            for idx, m in enumerate(slack_messages, 1):
+                channel = m.get('channel', 'Unknown')
+                username = m.get('username', 'Unknown')
+                timestamp = m.get('date', m.get('ts', 'Unknown'))
+                text = _clean_slack_text(m.get('text', '').strip())
+                permalink = m.get('permalink', '')
+                score = m.get('score', 0.0)
+
+                text_escaped = html.escape(text)[:500]
+                if len(text) > 500:
+                    text_escaped += "..."
+
                 st.markdown(f"""
-                <div class="citation-card">
-                    <div class="citation-title">{config['icon']} {i}. {html.escape(title)}{date_display}</div>
-                    {'<div class="citation-evidence">' + html.escape(evidence) + '</div>' if evidence else ''}
-                    {'<small style="color: #666;">🔗 <a href="' + html.escape(url) + '" target="_blank">' + html.escape(url[:50] + ('...' if len(url) > 50 else '')) + '</a></small>' if url else ''}
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #4A90E2;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="font-weight: 600; color: #1f1f1f;">#{channel}</span>
+                        <span style="color: #666; font-size: 0.9em;">{timestamp}</span>
+                    </div>
+                    <div style="color: #4A90E2; font-size: 0.9em; margin-bottom: 10px;">@{username}</div>
+                    <div style="color: #1f1f1f; line-height: 1.6; margin-bottom: 10px; white-space: pre-wrap;">{text_escaped}</div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <a href="{permalink}" target="_blank" style="color: #4A90E2; text-decoration: none; font-size: 0.9em;">View in Slack</a>
+                        <span style="color: #888; font-size: 0.85em;">Score: {score:.2f}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # Render Confluence Pages
+    with st.expander(f"📖 Confluence Pages ({len(confluence_pages)} found)", expanded=False):
+        if not confluence_pages:
+            st.info("No Confluence results found.")
+        else:
+            for idx, p in enumerate(confluence_pages, 1):
+                title = p.get('title', 'Untitled')
+                space = p.get('space', 'Unknown')
+                last_modified = p.get('last_modified', 'Unknown')
+                excerpt = (p.get('excerpt') or p.get('text', '')).strip()
+                url = p.get('url', '')
+                score = p.get('score', 0.0)
+
+                # Clean excerpt from HTML tags and highlight markers
+                cleaned_excerpt = re.sub(r'@@@hl@@@(.*?)@@@endhl@@@', r'\1', excerpt)
+                cleaned_excerpt = re.sub(r'<[^>]+>', '', cleaned_excerpt)
+                cleaned_excerpt = cleaned_excerpt.replace('&nbsp;', ' ').replace('&amp;', '&')
+                cleaned_excerpt = cleaned_excerpt.replace('&lt;', '<').replace('&gt;', '>')
+                if len(cleaned_excerpt) > 300:
+                    cleaned_excerpt = cleaned_excerpt[:300] + '...'
+
+                st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #6B46C1;">
+                    <div style="font-weight: 600; color: #1f1f1f; font-size: 1.1em; margin-bottom: 8px;">{html.escape(title)}</div>
+                    <div style="display: flex; gap: 15px; margin-bottom: 10px; font-size: 0.9em;">
+                        <span style="color: #6B46C1; font-weight: 500;">{html.escape(space)}</span>
+                        <span style="color: #666;">{html.escape(last_modified)}</span>
+                        <span style="color: #888;">Score: {score:.2f}</span>
+                    </div>
+                    <div style="color: #444; line-height: 1.6; margin-bottom: 10px; font-style: italic;">{html.escape(cleaned_excerpt)}</div>
+                    <a href="{url}" target="_blank" style="color: #6B46C1; text-decoration: none; font-size: 0.9em;">Open Page</a>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # Render Knowledge Base Docs
+    with st.expander(f"📚 Knowledge Base Docs ({len(docs_results)} found)", expanded=False):
+        if not docs_results:
+            st.info("No docs results found.")
+        else:
+            for idx, d in enumerate(docs_results, 1):
+                title = d.get('title', 'Untitled')
+                url = d.get('url', '')
+                text = (d.get('text') or '').strip()
+                score = d.get('score', 0.0)
+
+                if len(text) > 300:
+                    text = text[:300] + '...'
+
+                st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #28a745;">
+                    <div style="font-weight: 600; color: #1f1f1f; font-size: 1.1em; margin-bottom: 8px;">{html.escape(title)}</div>
+                    <div style="color: #666; font-size: 0.9em; margin-bottom: 10px;">Score: {score:.2f}</div>
+                    <div style="color: #444; line-height: 1.6; margin-bottom: 10px;">{html.escape(text)}</div>
+                    <a href="{url}" target="_blank" style="color: #28a745; text-decoration: none; font-size: 0.9em;">Open Document</a>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # Render Zendesk Tickets
+    if zendesk_results:
+        with st.expander(f"🎫 Zendesk Tickets ({len(zendesk_results)} found)", expanded=False):
+            for idx, z in enumerate(zendesk_results, 1):
+                title = z.get('title', 'Untitled')
+                url = z.get('url', '')
+                text = (z.get('text') or z.get('excerpt', '')).strip()
+                score = z.get('score', 0.0)
+
+                if len(text) > 300:
+                    text = text[:300] + '...'
+
+                st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #dc3545;">
+                    <div style="font-weight: 600; color: #1f1f1f; font-size: 1.1em; margin-bottom: 8px;">{html.escape(title)}</div>
+                    <div style="color: #666; font-size: 0.9em; margin-bottom: 10px;">Score: {score:.2f}</div>
+                    <div style="color: #444; line-height: 1.6; margin-bottom: 10px;">{html.escape(text)}</div>
+                    <a href="{url}" target="_blank" style="color: #dc3545; text-decoration: none; font-size: 0.9em;">View Ticket</a>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # Render Jira Issues
+    if jira_results:
+        with st.expander(f"📋 Jira Issues ({len(jira_results)} found)", expanded=False):
+            for idx, j in enumerate(jira_results, 1):
+                title = j.get('title', 'Untitled')
+                url = j.get('url', '')
+                text = (j.get('text') or j.get('excerpt', '')).strip()
+                score = j.get('score', 0.0)
+
+                if len(text) > 300:
+                    text = text[:300] + '...'
+
+                st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #0052CC;">
+                    <div style="font-weight: 600; color: #1f1f1f; font-size: 1.1em; margin-bottom: 8px;">{html.escape(title)}</div>
+                    <div style="color: #666; font-size: 0.9em; margin-bottom: 10px;">Score: {score:.2f}</div>
+                    <div style="color: #444; line-height: 1.6; margin-bottom: 10px;">{html.escape(text)}</div>
+                    <a href="{url}" target="_blank" style="color: #0052CC; text-decoration: none; font-size: 0.9em;">View Issue</a>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -489,14 +749,51 @@ def process_query(query: str):
                     try:
                         obs_data = step.observation
                         collected = []
+                        
+                        # Handle string representation of list (JSON serialized)
+                        if isinstance(obs_data, str):
+                            try:
+                                import json
+                                obs_data = json.loads(obs_data)
+                            except (json.JSONDecodeError, ValueError):
+                                # If not JSON, try eval (less safe but might work for list strings)
+                                try:
+                                    obs_data = eval(obs_data) if obs_data.strip().startswith('[') else obs_data
+                                except:
+                                    pass
+                        
                         if isinstance(obs_data, list):
+                            # DEBUG: Log observation data
+                            logger.info(f"DEBUG - Observation contains {len(obs_data)} items")
+                            confluence_items = []
+                            knowledge_base_items = []
                             for item in obs_data:
-                                if isinstance(item, dict) and any(k in item for k in ["url", "title", "text", "permalink"]):
+                                # Check for source items - include "excerpt" for Confluence results
+                                if isinstance(item, dict) and any(k in item for k in ["url", "title", "text", "excerpt", "permalink"]):
                                     all_sources.append(item)
                                     collected.append(item)
+                                    # Track Confluence items specifically - check for source field or space field
+                                    url = item.get("url", "") or item.get("permalink", "")
+                                    source_type = item.get("source", "")
+                                    if "confluence" in url.lower() or item.get("space") or source_type == "confluence":
+                                        confluence_items.append(item.get("title", "NO_TITLE"))
+                                        # Ensure source field is set if missing
+                                        if "source" not in item:
+                                            item["source"] = "confluence"
+                                    # Track knowledge_base items specifically
+                                    elif source_type == "knowledge_base":
+                                        knowledge_base_items.append(item.get("title", "NO_TITLE"))
+                                        # Ensure source field is set if missing
+                                        if "source" not in item:
+                                            item["source"] = "knowledge_base"
+                            if confluence_items:
+                                logger.info(f"DEBUG - Found {len(confluence_items)} Confluence items: {confluence_items}")
+                            if knowledge_base_items:
+                                logger.info(f"DEBUG - Found {len(knowledge_base_items)} Knowledge Base items: {knowledge_base_items}")
                         if collected:
                             step_sources.append(collected)
-                    except:
+                    except Exception as e:
+                        logger.error(f"DEBUG - Error extracting sources: {e}")
                         pass
 
             if "output" in chunk:
@@ -598,6 +895,57 @@ def process_query(query: str):
                 # Too many sources, don't show any rather than showing wrong ones
                 used_sources = []
 
+        # Filter sources by minimum relevance score
+        # Only keep sources with score > 0.3 (if score is available)
+        MIN_RELEVANCE_SCORE = 0.2  # Lowered from 0.3 to avoid filtering good results
+
+        # DEBUG: Log before filtering
+        confluence_before = [s for s in used_sources if "confluence" in (s.get("url", "") or "").lower() or s.get("space") or s.get("source") == "confluence"]
+        logger.info(f"DEBUG - Before filtering: {len(used_sources)} total sources, {len(confluence_before)} Confluence sources")
+        if confluence_before:
+            logger.info(f"DEBUG - Confluence titles before filter: {[s.get('title', 'NO_TITLE') for s in confluence_before]}")
+
+        filtered_sources = []
+        for source in used_sources:
+            score = source.get("score", 1.0)  # Default to 1.0 if no score
+            if isinstance(score, (int, float)) and score >= MIN_RELEVANCE_SCORE:
+                filtered_sources.append(source)
+            elif not isinstance(score, (int, float)):
+                # Keep sources without numeric scores
+                filtered_sources.append(source)
+        used_sources = filtered_sources
+
+        # DEBUG: Log after filtering
+        confluence_after = [s for s in used_sources if "confluence" in (s.get("url", "") or "").lower() or s.get("space") or s.get("source") == "confluence"]
+        logger.info(f"DEBUG - After filtering: {len(used_sources)} total sources, {len(confluence_after)} Confluence sources")
+        if confluence_after:
+            logger.info(f"DEBUG - Confluence titles after filter: {[s.get('title', 'NO_TITLE') for s in confluence_after]}")
+
+        # Check if answer indicates no relevant information found
+        # If so, don't show sources (they're not actually relevant)
+        if final_answer and isinstance(final_answer, str):
+            answer_lower = final_answer.lower()
+            no_results_phrases = [
+                "no relevant information",
+                "couldn't find",
+                "could not find",
+                "no information found",
+                "no results",
+                "unable to find",
+                "don't have any information",
+                "no specific information",
+                "no documentation",
+                "no confluence pages",
+                "no slack messages",
+                "no docs found",
+                "sorry, i couldn't",
+                "sorry, i could not",
+                "i don't have",
+                "i couldn't locate"
+            ]
+            if any(phrase in answer_lower for phrase in no_results_phrases):
+                used_sources = []
+
         # Cache results
         try:
             cache_search_results(query, cache_filters, {
@@ -658,13 +1006,38 @@ if prompt := st.chat_input("Ask a question about your PM tools and processes..."
     # Get agent response
     with st.chat_message("assistant"):
         with st.spinner("Thinking and searching..."):
+            import time
+            start_time = time.time()
             response = process_query(prompt)
+            response_time_ms = int((time.time() - start_time) * 1000)
+
+            # Log query for audit trail
+            sources_used = []
+            if response.get("sources"):
+                for source in response["sources"]:
+                    source_type = source.get("source_type", "unknown")
+                    if source_type not in sources_used:
+                        sources_used.append(source_type)
+
+            session_manager.log_query(
+                session_id=st.session_state.auth_session_id,
+                user_id=user_info['id'],
+                email=user_info['email'],
+                query_text=prompt,
+                sources_used=sources_used,
+                response_time_ms=response_time_ms
+            )
 
         # Display answer
         st.markdown(response["answer"])
 
         # Display sources
         if response["sources"]:
+            # DEBUG: Log what's being passed to render_sources
+            confluence_in_response = [s for s in response["sources"] if "confluence" in (s.get("url", "") or "").lower() or s.get("space") or s.get("source") == "confluence"]
+            logger.info(f"DEBUG - Passing to render_sources: {len(response['sources'])} total, {len(confluence_in_response)} Confluence")
+            if confluence_in_response:
+                logger.info(f"DEBUG - Confluence titles in render_sources: {[s.get('title', 'NO_TITLE') for s in confluence_in_response]}")
             render_sources(response["sources"])
 
         # Show cache indicator
