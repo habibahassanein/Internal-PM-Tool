@@ -926,7 +926,7 @@ if prompt := st.chat_input("Ask a question about your PM tools and processes..."
 
             session_manager.log_query(
                 session_id=st.session_state.auth_session_id,
-                user_id=user_info['sub'],
+                user_id=user_info['id'],
                 email=user_info['email'],
                 query_text=prompt,
                 sources_used=sources_used,
