@@ -112,7 +112,7 @@ class SessionManager:
         Create or update user record.
 
         Args:
-            user_info: User information from OAuth
+            user_info: User information from OAuth (supports both Google and Slack)
 
         Returns:
             user_id
@@ -120,10 +120,16 @@ class SessionManager:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        user_id = user_info['sub']
+        # Handle both Google OAuth ('sub') and Slack OAuth ('id') user ID fields
+        user_id = user_info.get('sub') or user_info.get('id')
+        if not user_id:
+            raise ValueError("User info must contain either 'sub' (Google) or 'id' (Slack) field")
+
         email = user_info['email']
-        name = user_info.get('name', '')
-        picture = user_info.get('picture', '')
+        # Slack uses 'real_name' or 'display_name', Google uses 'name'
+        name = user_info.get('name') or user_info.get('real_name') or user_info.get('display_name', '')
+        # Slack uses 'image', Google uses 'picture'
+        picture = user_info.get('picture') or user_info.get('image', '')
         now = datetime.utcnow().isoformat()
 
         try:
