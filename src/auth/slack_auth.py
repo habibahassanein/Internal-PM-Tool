@@ -252,270 +252,90 @@ class SlackOAuthHandler:
         return False
 
     def _show_login_ui(self) -> None:
-        """Display Slack login UI."""
-        # Hide Streamlit's default header and footer for cleaner look
+        """Display Slack login UI using Streamlit native components."""
+        # Simple CSS for button styling only
         st.markdown("""
             <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
-            /* Hide Streamlit branding */
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            header {visibility: hidden;}
-
-            /* Reset body styles */
             .stApp {
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             }
 
-            .login-card {
-                margin: 0 auto;
-                background: white;
-                border-radius: 24px;
-                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-                padding: 3rem 2.5rem;
-                max-width: 480px;
-                width: 100%;
-                text-align: center;
-                animation: fadeInUp 0.6s ease-out;
-            }
-
-            @keyframes fadeInUp {
-                from {
-                    opacity: 0;
-                    transform: translateY(30px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateY(0);
-                }
-            }
-
-            .slack-logo-wrapper {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 80px;
-                height: 80px;
-                background: linear-gradient(135deg, #4A154B 0%, #611f69 100%);
-                border-radius: 20px;
-                margin-bottom: 1.5rem;
-                box-shadow: 0 8px 16px rgba(74, 21, 75, 0.3);
-                animation: bounceIn 0.8s ease-out 0.2s backwards;
-            }
-
-            @keyframes bounceIn {
-                0% {
-                    opacity: 0;
-                    transform: scale(0.3);
-                }
-                50% {
-                    transform: scale(1.05);
-                }
-                100% {
-                    opacity: 1;
-                    transform: scale(1);
-                }
-            }
-
-            .slack-logo {
-                font-size: 3rem;
-                filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
-            }
-
-            .login-title {
-                font-size: 2rem;
-                font-weight: 700;
-                color: #1a202c;
-                margin-bottom: 0.75rem;
-                letter-spacing: -0.5px;
-                animation: fadeIn 0.6s ease-out 0.3s backwards;
-            }
-
-            @keyframes fadeIn {
-                from {
-                    opacity: 0;
-                }
-                to {
-                    opacity: 1;
-                }
-            }
-
-            .login-subtitle {
-                font-size: 1.05rem;
-                color: #718096;
-                margin-bottom: 2.5rem;
-                line-height: 1.6;
-                animation: fadeIn 0.6s ease-out 0.4s backwards;
-            }
-
-            .slack-button {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                gap: 12px;
-                background: linear-gradient(135deg, #4A154B 0%, #611f69 100%);
-                color: white;
-                padding: 16px 32px;
-                border-radius: 12px;
-                text-decoration: none;
-                font-weight: 600;
-                font-size: 1.05rem;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                box-shadow: 0 4px 12px rgba(74, 21, 75, 0.4);
-                width: 100%;
-                max-width: 280px;
-                animation: fadeIn 0.6s ease-out 0.5s backwards;
-            }
-
-            .slack-button:hover {
-                background: linear-gradient(135deg, #611f69 0%, #7e2b80 100%);
-                transform: translateY(-2px);
-                box-shadow: 0 8px 20px rgba(74, 21, 75, 0.5);
-                text-decoration: none;
-                color: white;
-            }
-
-            .slack-button:active {
-                transform: translateY(0);
-            }
-
-            .slack-button svg {
-                width: 24px;
-                height: 24px;
-            }
-
-            .features-grid {
-                display: grid;
-                grid-template-columns: 1fr;
-                gap: 1rem;
-                margin-top: 2.5rem;
-                padding-top: 2.5rem;
-                border-top: 1px solid #e2e8f0;
-                animation: fadeIn 0.6s ease-out 0.6s backwards;
-            }
-
-            .feature-item {
-                display: flex;
-                align-items: flex-start;
-                text-align: left;
-                gap: 12px;
-                padding: 0.5rem;
-            }
-
-            .feature-icon {
-                flex-shrink: 0;
-                width: 32px;
-                height: 32px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                border-radius: 8px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 1.1rem;
-            }
-
-            .feature-text {
-                flex: 1;
-            }
-
-            .feature-title {
-                font-weight: 600;
-                color: #2d3748;
-                font-size: 0.95rem;
-                margin-bottom: 0.25rem;
-            }
-
-            .feature-desc {
-                font-size: 0.85rem;
-                color: #718096;
-                line-height: 1.5;
-            }
-
-            .security-badge {
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-                background: #f7fafc;
-                color: #4a5568;
-                padding: 8px 16px;
-                border-radius: 20px;
-                font-size: 0.85rem;
-                margin-top: 1.5rem;
-                animation: fadeIn 0.6s ease-out 0.7s backwards;
-            }
-
-            .security-badge svg {
-                width: 16px;
-                height: 16px;
+            div[data-testid="stVerticalBlock"] > div:has(div.element-container) {
+                background-color: white;
+                padding: 3rem 2rem;
+                border-radius: 16px;
+                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
             }
             </style>
         """, unsafe_allow_html=True)
 
-        # Add spacing at top
-        st.markdown("<br><br>", unsafe_allow_html=True)
+        # Add spacing
+        st.write("")
+        st.write("")
+        st.write("")
 
-        # Generate auth URL
-        auth_url = self.generate_authorization_url()
-
-        # Create centered layout using columns
+        # Create centered layout
         col1, col2, col3 = st.columns([1, 2, 1])
 
         with col2:
+            # Logo
+            st.markdown("<div style='text-align: center; font-size: 4rem; margin-bottom: 1rem;'>💬</div>", unsafe_allow_html=True)
+
+            # Title
+            st.markdown("<h1 style='text-align: center; color: #1a202c; margin-bottom: 0.5rem;'>Internal PM Chat</h1>", unsafe_allow_html=True)
+
+            # Subtitle
+            st.markdown("<p style='text-align: center; color: #718096; margin-bottom: 2rem;'>Your unified workspace for Slack conversations, Confluence docs, and team knowledge</p>", unsafe_allow_html=True)
+
+            # Generate auth URL
+            auth_url = self.generate_authorization_url()
+
+            # Sign in button with better styling
             st.markdown(f"""
-                <div class="login-card">
-                    <div class="slack-logo-wrapper">
-                        <div class="slack-logo">💬</div>
-                    </div>
-
-                    <h1 class="login-title">Internal PM Chat</h1>
-                    <p class="login-subtitle">
-                        Your unified workspace for Slack conversations, Confluence docs,
-                        and team knowledge - all in one intelligent search
-                    </p>
-
-                    <a href="{auth_url}" class="slack-button" target="_self">
-                        <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/>
-                        </svg>
+                <div style='text-align: center; margin: 2rem 0;'>
+                    <a href="{auth_url}"
+                       style='display: inline-block;
+                              background: #4A154B;
+                              color: white;
+                              padding: 12px 32px;
+                              border-radius: 8px;
+                              text-decoration: none;
+                              font-weight: 600;
+                              font-size: 1rem;
+                              transition: background 0.3s;'>
                         Sign in with Slack
                     </a>
-
-                    <div class="security-badge">
-                        <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>
-                        </svg>
-                        Secured by Slack OAuth 2.0
-                    </div>
-
-                    <div class="features-grid">
-                        <div class="feature-item">
-                            <div class="feature-icon">🔒</div>
-                            <div class="feature-text">
-                                <div class="feature-title">Private Channel Access</div>
-                                <div class="feature-desc">Search your private channels and conversations securely</div>
-                            </div>
-                        </div>
-
-                        <div class="feature-item">
-                            <div class="feature-icon">🎯</div>
-                            <div class="feature-text">
-                                <div class="feature-title">Personalized Results</div>
-                                <div class="feature-desc">Get search results tailored to your permissions</div>
-                            </div>
-                        </div>
-
-                        <div class="feature-item">
-                            <div class="feature-icon">⚡</div>
-                            <div class="feature-text">
-                                <div class="feature-title">Unified Search</div>
-                                <div class="feature-desc">Search across Slack, Confluence, and documentation</div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             """, unsafe_allow_html=True)
+
+            st.write("")
+
+            # Divider
+            st.markdown("---")
+
+            # Features
+            st.markdown("### Why Sign in with Slack?")
+
+            col_a, col_b = st.columns([1, 9])
+            with col_a:
+                st.write("🔒")
+            with col_b:
+                st.markdown("**Private Channel Access**  \nSearch your private channels and conversations securely")
+
+            col_a, col_b = st.columns([1, 9])
+            with col_a:
+                st.write("🎯")
+            with col_b:
+                st.markdown("**Personalized Results**  \nGet search results tailored to your permissions")
+
+            col_a, col_b = st.columns([1, 9])
+            with col_a:
+                st.write("⚡")
+            with col_b:
+                st.markdown("**Unified Search**  \nSearch across Slack, Confluence, and documentation")
+
+            st.write("")
+            st.caption("🔐 Secured by Slack OAuth 2.0")
 
     def _show_setup_guide(self) -> None:
         """Display setup guide when OAuth credentials are not configured."""
