@@ -299,17 +299,19 @@ def render_sources(sources):
 
         logger.info(f"DEBUG render_sources [{idx}] - title: {title}, url: {url}, source_type: {source_type}, has_space: {has_space}")
 
+        # Prioritize source field check first for accurate categorization
         if "channel" in source or "permalink" in source or source_type == "slack":
             slack_messages.append(source)
-        elif "confluence" in url.lower() or source_type == "confluence":
+        elif source_type == "confluence" or ("confluence" in url.lower() and source_type != "knowledge_base"):
             confluence_pages.append(source)
             logger.info(f"DEBUG render_sources - CATEGORIZED AS CONFLUENCE: {title}")
-        elif "zendesk" in url.lower() or source_type == "zendesk":
+        elif source_type == "zendesk" or ("zendesk" in url.lower() and source_type != "knowledge_base"):
             zendesk_results.append(source)
-        elif "jira" in url.lower() or source_type == "jira":
+        elif source_type == "jira" or ("jira" in url.lower() and source_type != "knowledge_base"):
             jira_results.append(source)
-        elif url.startswith("http") or source_type == "knowledge_base":
+        elif source_type == "knowledge_base" or (url.startswith("http") and source_type not in ["slack", "confluence", "zendesk", "jira"]):
             docs_results.append(source)
+            logger.info(f"DEBUG render_sources - CATEGORIZED AS KNOWLEDGE_BASE: {title}")
         else:
             other_sources.append(source)
             logger.info(f"DEBUG render_sources - CATEGORIZED AS OTHER: {title}")
@@ -545,6 +547,7 @@ def process_query(query: str):
                             # DEBUG: Log observation data
                             logger.info(f"DEBUG - Observation contains {len(obs_data)} items")
                             confluence_items = []
+                            knowledge_base_items = []
                             for item in obs_data:
                                 # Check for source items - include "excerpt" for Confluence results
                                 if isinstance(item, dict) and any(k in item for k in ["url", "title", "text", "excerpt", "permalink"]):
@@ -558,8 +561,16 @@ def process_query(query: str):
                                         # Ensure source field is set if missing
                                         if "source" not in item:
                                             item["source"] = "confluence"
+                                    # Track knowledge_base items specifically
+                                    elif source_type == "knowledge_base":
+                                        knowledge_base_items.append(item.get("title", "NO_TITLE"))
+                                        # Ensure source field is set if missing
+                                        if "source" not in item:
+                                            item["source"] = "knowledge_base"
                             if confluence_items:
                                 logger.info(f"DEBUG - Found {len(confluence_items)} Confluence items: {confluence_items}")
+                            if knowledge_base_items:
+                                logger.info(f"DEBUG - Found {len(knowledge_base_items)} Knowledge Base items: {knowledge_base_items}")
                         if collected:
                             step_sources.append(collected)
                     except Exception as e:
