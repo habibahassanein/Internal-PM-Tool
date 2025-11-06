@@ -89,12 +89,12 @@ class SlackOAuthHandler:
         # Build authorization URL manually
         from urllib.parse import urlencode
 
-        scopes = ",".join(self.USER_SCOPES)
+        # For user token only, use user_scope parameter
+        user_scopes = ",".join(self.USER_SCOPES)
 
         params = {
             "client_id": self.client_id,
-            "scope": scopes,
-            "user_scope": scopes,
+            "user_scope": user_scopes,
             "redirect_uri": self.redirect_uri,
             "state": state
         }
