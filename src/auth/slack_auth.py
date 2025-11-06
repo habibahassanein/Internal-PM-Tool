@@ -5,7 +5,6 @@ Allows users to authenticate with Slack to access the application and their priv
 
 import streamlit as st
 from slack_sdk.web import WebClient
-from slack_sdk.oauth import AuthorizeUrlGenerator, RedirectUriPageRenderer
 from slack_sdk.errors import SlackApiError
 import os
 import secrets
@@ -87,17 +86,20 @@ class SlackOAuthHandler:
         state = secrets.token_urlsafe(32)
         st.session_state.slack_auth_state = state
 
-        # Generate authorization URL
-        authorize_url_generator = AuthorizeUrlGenerator(
-            client_id=self.client_id,
-            scopes=self.USER_SCOPES,
-            user_scopes=self.USER_SCOPES
-        )
+        # Build authorization URL manually
+        from urllib.parse import urlencode
 
-        auth_url = authorize_url_generator.generate(
-            state=state,
-            redirect_uri=self.redirect_uri
-        )
+        scopes = ",".join(self.USER_SCOPES)
+
+        params = {
+            "client_id": self.client_id,
+            "scope": scopes,
+            "user_scope": scopes,
+            "redirect_uri": self.redirect_uri,
+            "state": state
+        }
+
+        auth_url = f"https://slack.com/oauth/v2/authorize?{urlencode(params)}"
 
         return auth_url
 
