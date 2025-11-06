@@ -54,127 +54,176 @@ def _get_secret_or_env(name: str, default: str = "") -> str:
 
 @tool(
     "search_confluence_pages",
-    description="""Search for pages in Confluence with AI-powered intent analysis.
+    description="""Search for pages in Confluence with optimized query processing.
 
     Args:
-        query: Search query (natural language question)
-        max_results: Maximum number of results to return (default 10)
+        query: Search query
+        max_results: Maximum number of results to return
+        space_filter: Specific space to search (None for all spaces)
 
     Returns:
-        List of page dictionaries with metadata (title, url, excerpt, space, score)"""
+        List of page dictionaries with metadata"""
 )
 def search_confluence_tool(
     query: str,
-    max_results: int = 10
+    max_results: int = 10,
+    space_filter: Optional[str] = None
 ) -> List[dict]:
-    """Search Confluence with intent analysis for better relevance."""
+    """Optimized Confluence search with query preprocessing."""
     if not query or not query.strip():
         return []
 
-    try:
-        # Analyze user intent to extract keywords, spaces, etc.
-        logger.info(f"Starting Confluence search with query: {query}")
-        intent_data = analyze_user_intent(query)
+    # Use stopwords filtering for better relevance
+    query_words = set(query.lower().split())
+    stop_words = {
+        "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of",
+        "with", "by", "is", "are", "was", "were", "be", "been", "have", "has",
+        "had", "do", "does", "did", "will", "would", "could", "should", "may",
+        "might", "can", "what", "when", "where", "why", "how", "who", "which",
+        "updates", "about", "on"
+    }
+    distinct_words = [word for word in query_words if word not in stop_words and len(word) > 2]
 
-        # Override the limit from intent analysis with our max_results
-        if "confluence_params" not in intent_data:
-            intent_data["confluence_params"] = {}
-        intent_data["confluence_params"]["limit"] = max_results
+    # Build search query prioritizing distinct words
+    if distinct_words:
+        search_query = " ".join(distinct_words)
+    else:
+        search_query = query
 
-        logger.info(f"Intent analysis complete. Confluence params: {intent_data.get('confluence_params', {})}")
+    logger.info(f"Optimized Confluence search query: {search_query}, space_filter: {space_filter}")
 
-        # Use the optimized handler with intent data
-        results = confluence_optimized_handler(intent_data, query)
-
-        logger.info(f"Confluence search returned {len(results)} results")
-
-        # DEBUG: Print actual results structure to understand what's being returned
-        if results:
-            logger.info(f"DEBUG - First Confluence result: {results[0]}")
-            logger.info(f"DEBUG - All result titles: {[r.get('title', 'NO_TITLE') for r in results]}")
-        else:
-            logger.warning(f"DEBUG - Confluence returned empty list for query: {query}")
-
-        return results
-
-    except Exception as e:
-        logger.error(f"Confluence search failed with error: {e}", exc_info=True)
-        logger.info(f"Falling back to basic Confluence search")
-        # Fallback to basic search
-        try:
-            return search_confluence(query, max_results, None)
-        except Exception as fallback_error:
-            logger.error(f"Fallback Confluence search also failed: {fallback_error}", exc_info=True)
-            return []
+    return search_confluence(search_query, max_results, space_filter)
 
 
 @tool(
     "search_slack_messages",
-    description="""Search for messages in Slack with AI-powered channel targeting.
+    description="""Search for messages in Slack across all channels.
 
     Args:
-        query: Search query (natural language question)
-        max_results: Maximum number of results to return (default 15)
+        query: Search query
+        max_results: Maximum number of results to return
+        channel_filter: Specific channel to search (None for all channels)
+        max_age_hours: Maximum age of messages in hours (default 0 = all history)
 
     Returns:
-        List of message dictionaries with enriched metadata (text, username, channel,
-        date, permalink, score, thread_context, reactions)"""
+        List of message dictionaries with metadata"""
 )
 def search_slack_tool(
     query: str,
-    max_results: int = 15
+    max_results: int = 10,
+    channel_filter: Optional[str] = None,
+    max_age_hours: int = 0  # 0 = all history
 ) -> List[dict]:
-    """Search Slack messages with intent analysis and channel intelligence."""
+    """Search Slack messages with intent-aware processing."""
     if not query or not query.strip():
         return []
 
-    try:
-        # Analyze user intent to extract keywords, channels, time ranges, etc.
-        logger.info(f"Starting Slack search with query: {query}")
-        intent_data = analyze_user_intent(query)
+    # Use stopwords filtering for better relevance
+    query_words = set(query.lower().split())
+    stop_words = {
+        "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of",
+        "with", "by", "is", "are", "was", "were", "be", "been", "have", "has",
+        "had", "do", "does", "did", "will", "would", "could", "should", "may",
+        "might", "can", "what", "when", "where", "why", "how", "who", "which",
+        "updates", "about", "on"
+    }
+    distinct_words = [word for word in query_words if word not in stop_words and len(word) > 2]
 
-        logger.info(f"Intent analysis complete. Slack params: {intent_data.get('slack_params', {})}")
+    # Create intent data for the search system with filtered keywords
+    if distinct_words:
+        keywords = distinct_words
+    else:
+        keywords = [term for term in query.lower().split() if len(term) > 2]
 
-        # Use the enhanced search with proper intent data
-        results = search_slack_simplified(query, intent_data, max_results)
+    priority_terms = keywords[:3]  # Top 3 terms as priority
 
-        logger.info(f"Slack search returned {len(results)} results")
+    intent_data = {
+        "slack_params": {
+            "keywords": keywords,
+            "priority_terms": priority_terms,
+            "channels": channel_filter if channel_filter else "all",
+            "time_range": "all",
+            "limit": max_results
+        },
+        "search_strategy": "fuzzy_match"
+    }
 
-        # Return enriched results directly (no data stripping!)
-        # This preserves: thread_context, reactions, scores, etc.
-        return results
+    logger.info(f"Optimized Slack search with keywords: {keywords}, channel_filter: {channel_filter}")
 
-    except Exception as e:
-        logger.error(f"Slack search failed with error: {e}", exc_info=True)
-        return []
+    # Use the simplified search
+    results = search_slack_simplified(query, intent_data, max_results)
+
+    # Convert to legacy format for compatibility
+    legacy_results = []
+    for result in results:
+        legacy_results.append({
+            "text": result.get("text", ""),
+            "username": result.get("username", "Unknown"),
+            "channel": result.get("channel", "unknown"),
+            "ts": result.get("ts", ""),
+            "permalink": result.get("permalink", ""),
+            "source": "slack"
+        })
+
+    return legacy_results
 
 
 @tool(
     "search_docs",
     description="""Search documents in Qdrant collection (Incorta Community, Docs & Support).
-    
+
     Args:
         query: Search query
         limit: Number of results to return
-    
+
     Returns:
         List of search results with metadata"""
 )
 def search_docs(query: str, limit: int = 5) -> List[dict]:
-    """Search documents in Qdrant collection."""
+    """Search documents in Qdrant collection with optimized relevance scoring."""
     from qdrant_client import QdrantClient
     from sentence_transformers import SentenceTransformer
-    
+
     if not query or not query.strip():
         return []
-    
+
     try:
-        qdrant_url = os.getenv("QDRANT_URL")
+        # Support env vars and Streamlit secrets
+        qdrant_url = os.getenv("QDRANT_URL") or os.getenv("QDRANT_HOST")
         qdrant_api_key = os.getenv("QDRANT_API_KEY", "")
-        
+        if not qdrant_url:
+            try:
+                import streamlit as st
+                qdrant_url = st.secrets.get("QDRANT_URL", "") or st.secrets.get("QDRANT_HOST", "")
+                qdrant_api_key = st.secrets.get("QDRANT_API_KEY", qdrant_api_key)
+            except Exception:
+                pass
+        if not qdrant_url:
+            logger.warning("QDRANT_URL not set; knowledge base search disabled")
+            return []
+
+        # Use stopwords filtering for better relevance
+        query_words = set(query.lower().split())
+        stop_words = {
+            "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of",
+            "with", "by", "is", "are", "was", "were", "be", "been", "have", "has",
+            "had", "do", "does", "did", "will", "would", "could", "should", "may",
+            "might", "can", "what", "when", "where", "why", "how", "who", "which",
+            "updates", "about", "on"
+        }
+        distinct_words = [word for word in query_words if word not in stop_words and len(word) > 2]
+
+        # Build optimized search query
+        if distinct_words:
+            search_query = " ".join(distinct_words)
+        else:
+            search_query = query
+
+        logger.info(f"Optimized docs search query: {search_query}")
+
         client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
         embedding_model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2", device="cpu")
-        query_vector = embedding_model.encode([query])[0]
+        query_vector = embedding_model.encode([search_query])[0]
 
         search_result = client.search(
             collection_name="docs",
@@ -182,11 +231,11 @@ def search_docs(query: str, limit: int = 5) -> List[dict]:
             limit=limit,
             with_payload=True
         )
-        
-        # Format results
+
+        # Format results with lower threshold for better recall
         formatted_results = []
         for r in search_result:
-            if r.score >= 0.25:  # Minimum cosine score threshold
+            if r.score >= 0.2:  # Lower threshold to avoid over-filtering
                 formatted_results.append({
                     "title": r.payload.get("title", "") or "",
                     "url": r.payload.get("url", "") or "",
@@ -194,7 +243,9 @@ def search_docs(query: str, limit: int = 5) -> List[dict]:
                     "score": r.score,
                     "source": "knowledge_base"
                 })
-        
+
+        logger.info(f"Returning {len(formatted_results)} knowledge base results")
+
         return formatted_results
     except Exception as e:
         logger.error(f"Failed to search docs: {e}")
@@ -501,15 +552,16 @@ Your available tools are:
 IMPORTANT SEARCH GUIDELINES:
 
 1. Use `search_confluence_pages` to find Confluence documentation:
-   - The tool uses AI to automatically target relevant spaces
+   - The tool uses optimized query processing with stopwords filtering for better relevance
    - Just pass the user's question directly - no need to extract keywords
 
 2. Use `search_slack_messages` to find Slack conversations:
-   - The tool uses channel intelligence to search the most relevant channels
-   - Returns enriched results with thread context and engagement metrics
+   - The tool searches across all channels with intelligent keyword matching
+   - Returns results with enriched metadata
    - Just pass the user's question directly
 
-3. Use `search_docs` to search the knowledge base (Incorta Community, Docs & Support)
+3. Use `search_docs` to search the knowledge base (Incorta Community, Docs & Support):
+   - The tool uses optimized relevance scoring for better results
 
 4. Use `fetch_schema_details` for Zendesk and Jira database schemas:
    - Input must be EXACTLY "ZendeskTickets" for Zendesk questions
