@@ -546,86 +546,6 @@ def _format_slack_timestamp(ts: str) -> str:
         return "Unknown date"
 
 
-def get_channel_info(channel_name: str, user_token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Get channel information including purpose, topic, and description.
-    
-    Args:
-        channel_name: Channel name (with or without # prefix)
-        user_token: Optional Slack user token
-    
-    Returns:
-        Dictionary with channel metadata including:
-        - name: Channel name
-        - purpose: Channel purpose/description
-        - topic: Channel topic
-        - is_private: Whether channel is private
-        - member_count: Number of members
-        - created: Creation timestamp
-    """
-    logger.info(f"Getting channel info for: {channel_name}")
-    
-    client = _get_slack_client(user_token)
-    
-    # Remove # prefix if present
-    channel_name_clean = channel_name.lstrip('#').strip()
-    
-    try:
-        # Use channel intelligence to find channel ID
-        intelligence = ChannelIntelligence(client)
-        intelligence.initialize()
-        channel_id = intelligence.get_channel_id_by_name(channel_name_clean)
-        
-        if not channel_id:
-            logger.warning(f"Channel '{channel_name_clean}' not found")
-            return {
-                "name": channel_name_clean,
-                "error": "Channel not found or not accessible"
-            }
-        
-        # Get channel info from Slack API
-        channel_info = client.conversations_info(channel=channel_id)
-        channel_data = channel_info.get("channel", {})
-        
-        # Extract purpose and topic
-        purpose_obj = channel_data.get("purpose", {})
-        topic_obj = channel_data.get("topic", {})
-        
-        purpose = purpose_obj.get("value", "") if purpose_obj else ""
-        topic = topic_obj.get("value", "") if topic_obj else ""
-        
-        # Get creation date
-        created_ts = channel_data.get("created", 0)
-        created_date = _format_slack_timestamp(str(created_ts)) if created_ts else "Unknown"
-        
-        result = {
-            "name": channel_data.get("name", channel_name_clean),
-            "purpose": purpose,
-            "topic": topic,
-            "description": purpose or topic or "",  # Use purpose as description, fallback to topic
-            "is_private": channel_data.get("is_private", False),
-            "member_count": channel_data.get("num_members", 0),
-            "created": created_date,
-            "channel_id": channel_id
-        }
-        
-        logger.info(f"Retrieved channel info for {channel_name_clean}: purpose={bool(purpose)}, topic={bool(topic)}")
-        return result
-        
-    except SlackApiError as e:
-        logger.error(f"Failed to get channel info for {channel_name_clean}: {e}")
-        return {
-            "name": channel_name_clean,
-            "error": f"Failed to retrieve channel info: {str(e)}"
-        }
-    except Exception as e:
-        logger.error(f"Unexpected error getting channel info for {channel_name_clean}: {e}")
-        return {
-            "name": channel_name_clean,
-            "error": f"Unexpected error: {str(e)}"
-        }
-
-
 def strategy_1_native_slack_search(user_query: str, user_token: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Strategy 1: Native Slack Search (Unfiltered)
@@ -1685,4 +1605,4 @@ def search_slack(
     return ranked_results
 
 
-__all__ = ["search_slack", "get_channel_info"]
+__all__ = ["search_slack"]

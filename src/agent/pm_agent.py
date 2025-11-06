@@ -15,7 +15,7 @@ from langchain.agents import create_react_agent, AgentExecutor
 from langchain_core.prompts import PromptTemplate
 
 from ..handler.confluence_handler import search_confluence, search_confluence_optimized as confluence_optimized_handler
-from ..handler.slack_handler import search_slack, get_channel_info
+from ..handler.slack_handler import search_slack
 from ..handler.intent_analyzer import analyze_user_intent
 from ..storage.cache_manager import get_cached_search_results, cache_search_results
 
@@ -178,54 +178,6 @@ def search_slack_tool(
         })
 
     return legacy_results
-
-
-@tool(
-    "get_slack_channel_info",
-    description="""Get information about a Slack channel including its purpose, topic, and description.
-
-    Args:
-        channel_name: Name of the channel (with or without # prefix, e.g., "incorta-7akawy" or "#incorta-7akawy")
-
-    Returns:
-        Dictionary with channel metadata including:
-        - name: Channel name
-        - purpose: Channel purpose/description
-        - topic: Channel topic
-        - description: Channel description (purpose or topic)
-        - is_private: Whether channel is private
-        - member_count: Number of members
-        - created: Creation date
-        
-    Use this tool when the user asks about a channel's description, purpose, topic, or what a channel is about."""
-)
-def get_slack_channel_info_tool(channel_name: str) -> dict:
-    """Get Slack channel information including purpose and topic."""
-    if not channel_name or not channel_name.strip():
-        return {"error": "Channel name is required"}
-    
-    import streamlit as st
-    user_token = st.session_state.get("slack_token") if hasattr(st, 'session_state') else None
-    
-    result = get_channel_info(channel_name, user_token)
-    
-    # Format as a result that can be included in search results
-    if "error" not in result:
-        return {
-            "title": f"Channel: #{result.get('name', channel_name)}",
-            "text": f"Purpose: {result.get('purpose', 'No purpose set')}\nTopic: {result.get('topic', 'No topic set')}\nDescription: {result.get('description', 'No description available')}",
-            "purpose": result.get("purpose", ""),
-            "topic": result.get("topic", ""),
-            "description": result.get("description", ""),
-            "is_private": result.get("is_private", False),
-            "member_count": result.get("member_count", 0),
-            "created": result.get("created", ""),
-            "channel": result.get("name", channel_name),
-            "source": "slack",
-            "url": f"https://incorta-group.slack.com/archives/{result.get('channel_id', '')}" if result.get("channel_id") else ""
-        }
-    else:
-        return result
 
 
 @tool(
@@ -600,7 +552,6 @@ def create_pm_agent(api_key: Optional[str] = None):
     tools = [
         search_confluence_tool,  # Updated: now uses intent analysis
         search_slack_tool,        # Updated: now uses intent analysis + channel intelligence
-        get_slack_channel_info_tool,  # New: get channel metadata
         search_docs,
         fetch_schema_details,
         fetch_table_data
@@ -622,11 +573,6 @@ IMPORTANT SEARCH GUIDELINES:
    - The tool searches across all channels (including private channels the user has access to) with intelligent keyword matching
    - Returns results with enriched metadata
    - Just pass the user's question directly
-
-2a. Use `get_slack_channel_info` to get channel metadata:
-   - Use this when the user asks about a channel's description, purpose, topic, or "what is channel X about"
-   - Pass the channel name (with or without # prefix)
-   - Returns channel purpose, topic, description, member count, and other metadata
 
 3. Use `search_docs` to search the knowledge base (Incorta Community, Docs & Support):
    - The tool uses optimized relevance scoring for better results
@@ -650,12 +596,6 @@ CRITICAL SEARCH STRATEGY WITH SOURCE PRIORITIZATION:
   → PRIORITIZE Zendesk queries FIRST, then other sources
 - If the user's query mentions "jira", "issue", "bug", "feature request", "roadmap":
   → PRIORITIZE Jira queries FIRST, then other sources
-
-**Special Channel Description Queries:**
-- If the user asks "what is channel X about", "what is #channelname", "channel X description", "channel X purpose", or "channel X topic":
-  → USE `get_slack_channel_info` tool FIRST to get the channel's purpose, topic, and description
-  → This tool directly retrieves channel metadata from Slack API
-  → Do NOT search messages - use the channel info tool instead
 
 **Search Execution:**
 - When a source is prioritized, search that source FIRST and wait for results
