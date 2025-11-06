@@ -253,22 +253,24 @@ class SlackOAuthHandler:
 
     def _show_login_ui(self) -> None:
         """Display Slack login UI."""
+        # Hide Streamlit's default header and footer for cleaner look
         st.markdown("""
             <style>
             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-            .main-login-container {
-                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            /* Hide Streamlit branding */
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+
+            /* Reset body styles */
+            .stApp {
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                padding: 2rem;
-                margin: -6rem -4rem;
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             }
 
             .login-card {
+                margin: 0 auto;
                 background: white;
                 border-radius: 24px;
                 box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
@@ -451,11 +453,17 @@ class SlackOAuthHandler:
             </style>
         """, unsafe_allow_html=True)
 
+        # Add spacing at top
+        st.markdown("<br><br>", unsafe_allow_html=True)
+
         # Generate auth URL
         auth_url = self.generate_authorization_url()
 
-        st.markdown(f"""
-            <div class="main-login-container">
+        # Create centered layout using columns
+        col1, col2, col3 = st.columns([1, 2, 1])
+
+        with col2:
+            st.markdown(f"""
                 <div class="login-card">
                     <div class="slack-logo-wrapper">
                         <div class="slack-logo">💬</div>
@@ -507,8 +515,7 @@ class SlackOAuthHandler:
                         </div>
                     </div>
                 </div>
-            </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
     def _show_setup_guide(self) -> None:
         """Display setup guide when OAuth credentials are not configured."""
