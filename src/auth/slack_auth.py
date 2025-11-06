@@ -89,8 +89,8 @@ class SlackOAuthHandler:
         # Build authorization URL manually
         from urllib.parse import urlencode
 
-        # For user token only, use user_scope parameter
-        user_scopes = ",".join(self.USER_SCOPES)
+        # Use space-separated scopes for user_scope (Slack OAuth v2 standard)
+        user_scopes = " ".join(self.USER_SCOPES)
 
         params = {
             "client_id": self.client_id,
