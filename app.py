@@ -544,11 +544,14 @@ def render_sources(sources):
         else:
             for idx, m in enumerate(slack_messages, 1):
                 channel = m.get('channel', 'Unknown')
+                channel_label = f"#{channel}"
+                if m.get("is_private"):
+                    channel_label += " (private)"
                 username = m.get('username', 'Unknown')
-                timestamp = m.get('date', m.get('ts', 'Unknown'))
+                timestamp = m.get('date') or m.get('ts', 'Unknown')
                 text = _clean_slack_text(m.get('text', '').strip())
                 permalink = m.get('permalink', '')
-                score = m.get('score', 0.0)
+                score = m.get('score', m.get('relevance_score', 0.0)) or 0.0
 
                 text_escaped = html.escape(text)[:500]
                 if len(text) > 500:
@@ -557,7 +560,7 @@ def render_sources(sources):
                 st.markdown(f"""
                 <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #4A90E2;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                        <span style="font-weight: 600; color: #1f1f1f;">#{channel}</span>
+                        <span style="font-weight: 600; color: #1f1f1f;">{channel_label}</span>
                         <span style="color: #666; font-size: 0.9em;">{timestamp}</span>
                     </div>
                     <div style="color: #4A90E2; font-size: 0.9em; margin-bottom: 10px;">@{username}</div>
@@ -612,16 +615,67 @@ def render_sources(sources):
                 title = d.get('title', 'Untitled')
                 url = d.get('url', '')
                 text = (d.get('text') or '').strip()
-                score = d.get('score', 0.0)
+                steps = d.get('steps') or []
+                score = d.get('relevance_score', d.get('score', 0.0)) or 0.0
+                score_raw = d.get('score_raw')
+                source_label = d.get('source', 'Knowledge Base')
+                collection = d.get('collection')
 
-                if len(text) > 300:
-                    text = text[:300] + '...'
+                # Prepare meta badges
+                score_label = f"{score:.3f}"
+                if score_raw is not None:
+                    score_label = f"{score:.3f} (raw {score_raw:.3f})"
+
+                meta_badges = [
+                    f"<span style='background-color: #e6f4ea; color: #1b5e20; padding: 2px 10px; border-radius: 12px; font-size: 0.8em;'>Score {score_label}</span>",
+                    f"<span style='background-color: #e8eaf6; color: #283593; padding: 2px 10px; border-radius: 12px; font-size: 0.8em;'>{html.escape(source_label)}</span>",
+                ]
+                if collection:
+                    meta_badges.append(
+                        f"<span style='background-color: #f1f3f4; color: #3c4043; padding: 2px 10px; border-radius: 12px; font-size: 0.8em;'>{html.escape(collection)}</span>"
+                    )
+                meta_html = " ".join(meta_badges)
+
+                # Build body content (steps preferred, otherwise concise summary)
+                if steps:
+                    steps_items = ''.join(f"<li>{html.escape(step.strip())}</li>" for step in steps[:6] if step.strip())
+                    body_html = (
+                        "<div style='color: #444; line-height: 1.6; margin-bottom: 10px;'>"
+                        "<strong>Steps:</strong>"
+                        f"<ol style='margin: 6px 0 0 20px;'>{steps_items}</ol>"
+                        "</div>"
+                    )
+                else:
+                    sentences = re.split(r'(?<=[.!?])\s+', text)
+                    summary_items = []
+                    for sentence in sentences:
+                        clean_sentence = sentence.strip()
+                        if len(clean_sentence) < 12:
+                            continue
+                        summary_items.append(html.escape(clean_sentence))
+                        if len(summary_items) >= 3:
+                            break
+                    if summary_items:
+                        summary_list = ''.join(f"<li>{item}</li>" for item in summary_items)
+                        body_html = (
+                            "<div style='color: #444; line-height: 1.6; margin-bottom: 10px;'>"
+                            "<strong>Summary:</strong>"
+                            f"<ul style='margin: 6px 0 0 18px;'>{summary_list}</ul>"
+                            "</div>"
+                        )
+                    else:
+                        truncated = html.escape(text[:300] + ("..." if len(text) > 300 else ""))
+                        body_html = (
+                            "<div style='color: #444; line-height: 1.6; margin-bottom: 10px;'>"
+                            f"{truncated}"
+                            "</div>"
+                        )
 
                 st.markdown(f"""
                 <div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #28a745;">
                     <div style="font-weight: 600; color: #1f1f1f; font-size: 1.1em; margin-bottom: 8px;">{html.escape(title)}</div>
-                    <div style="color: #666; font-size: 0.9em; margin-bottom: 10px;">Score: {score:.2f}</div>
-                    <div style="color: #444; line-height: 1.6; margin-bottom: 10px;">{html.escape(text)}</div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; font-size: 0.9em; color: #666;">{meta_html}</div>
+                    {body_html}
                     <a href="{url}" target="_blank" style="color: #28a745; text-decoration: none; font-size: 0.9em;">Open Document</a>
                 </div>
                 """, unsafe_allow_html=True)
