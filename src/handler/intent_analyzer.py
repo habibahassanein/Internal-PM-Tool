@@ -65,10 +65,11 @@ def configure_genai() -> None:
             import random
             api_key = random.choice(_api_manager.api_keys)
     else:
-        api_key = os.getenv("GEMINI_API_KEY")
+        # Try numbered keys first, then fall back to GEMINI_API_KEY
+        api_key = os.getenv("GEMINI_API_KEY_1") or os.getenv("GEMINI_API_KEY_2") or os.getenv("GEMINI_API_KEY_3") or os.getenv("GEMINI_API_KEY_4") or os.getenv("GEMINI_API_KEY")
         if not api_key:
-            raise RuntimeError("Missing GEMINI_API_KEY environment variable.")
-    
+            raise RuntimeError("Missing GEMINI_API_KEY or GEMINI_API_KEY_1/2/3/4 environment variable.")
+
     genai.configure(api_key=api_key)
 
 
