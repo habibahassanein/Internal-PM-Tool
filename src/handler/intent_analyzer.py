@@ -440,7 +440,7 @@ Return ONLY the JSON response.
     if _api_manager:
         def _generate_intent():
             configure_genai()  # Ensure genai is configured with current key
-            model = genai.GenerativeModel("gemini-2.0-flash-lite")  # Use same model as other modules
+            model = genai.GenerativeModel("gemini-2.5-flash-lite")  # Use same model as other modules
             response = model.generate_content(prompt)
             return response.text.strip()
         
@@ -455,13 +455,13 @@ Return ONLY the JSON response.
             logger.error(f"Intent analysis failed after trying all keys: {e}")
             # Fall back to single key attempt
             configure_genai()
-            model = genai.GenerativeModel("gemini-2.0-flash-lite")
+            model = genai.GenerativeModel("gemini-2.5-flash-lite")
             response = model.generate_content(prompt)
             response_text = response.text.strip()
     else:
         # Single key mode
         configure_genai()
-        model = genai.GenerativeModel("gemini-2.0-flash-lite")  # Use same model as other modules
+        model = genai.GenerativeModel("gemini-2.5-flash-lite")  # Use same model as other modules
         response = model.generate_content(prompt)
         response_text = response.text.strip()
     
