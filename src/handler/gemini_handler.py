@@ -95,18 +95,18 @@ except Exception as e:
     logger.error(f"Failed to configure genai: {e}")
     raise
 
-# Default model: Gemini 2.5 Flash Lite
-DEFAULT_MODEL = "gemini-2.5-flash-lite"
+# Default model: Gemini 2.0 Flash Lite
+DEFAULT_MODEL = "gemini-2.0-flash-lite"
 
 # Supported models with fallback order
 SUPPORTED_MODELS = [
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-exp",
+    "gemini-1.5-flash",
     "gemini-2.5-flash-lite",
     "gemini-2.5-flash-lite-preview-09-2025",
     "gemini-2.5-flash",
-    "gemini-2.0-flash-exp",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-1.5-flash",
 ]
 
 
