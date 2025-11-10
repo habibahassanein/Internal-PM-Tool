@@ -15,7 +15,7 @@ from typing import Optional, Sequence, List, Dict, Any
 
 import google.generativeai as genai
 from dotenv import load_dotenv
-import toon
+from toon import encode as toon_encode
 
 from ..storage.cache_manager import get_cached_llm_response, cache_llm_response
 
@@ -265,7 +265,7 @@ def build_user_payload(query: str, passages: List[dict], max_chars_per_passage: 
     if use_toon:
         try:
             # Use TOON format for 30-60% token reduction
-            return toon.encode(payload)
+            return toon_encode(payload)
         except Exception as e:
             # Fallback to JSON if TOON encoding fails
             logger.warning(f"TOON encoding failed, falling back to JSON: {e}")
