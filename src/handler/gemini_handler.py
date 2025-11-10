@@ -15,6 +15,7 @@ from typing import Optional, Sequence, List, Dict, Any
 
 import google.generativeai as genai
 from dotenv import load_dotenv
+import toon
 
 from ..storage.cache_manager import get_cached_llm_response, cache_llm_response
 
@@ -236,17 +237,18 @@ Return strictly valid JSON. No markdown, no commentary, no explanations outside 
 """
 
 
-def build_user_payload(query: str, passages: List[dict], max_chars_per_passage: int = 900) -> str:
+def build_user_payload(query: str, passages: List[dict], max_chars_per_passage: int = 900, use_toon: bool = True) -> str:
     """
-    Build JSON payload from query and passages.
-    
+    Build payload from query and passages using TOON format for token efficiency.
+
     Args:
         query: User query string
         passages: List of passage dicts with title, url, text/excerpt, source
         max_chars_per_passage: Maximum characters per passage snippet
-    
+        use_toon: If True, use TOON format (30-60% fewer tokens); if False, use JSON
+
     Returns:
-        JSON string of query and passages
+        TOON-encoded or JSON string of query and passages
     """
     blocks = []
     for p in passages:
@@ -257,7 +259,19 @@ def build_user_payload(query: str, passages: List[dict], max_chars_per_passage: 
             "snippet": snippet,
             "source": p.get("source", "unknown")
         })
-    return json.dumps({"query": query, "passages": blocks}, ensure_ascii=False)
+
+    payload = {"query": query, "passages": blocks}
+
+    if use_toon:
+        try:
+            # Use TOON format for 30-60% token reduction
+            return toon.encode(payload)
+        except Exception as e:
+            # Fallback to JSON if TOON encoding fails
+            logger.warning(f"TOON encoding failed, falling back to JSON: {e}")
+            return json.dumps(payload, ensure_ascii=False)
+    else:
+        return json.dumps(payload, ensure_ascii=False)
 
 
 def build_enhanced_prompt(
@@ -353,7 +367,7 @@ def build_enhanced_prompt(
 
     prompt = (
         f"{SYSTEM_MSG}\n\n"
-        "User Query and Passages (JSON):\n"
+        "User Query and Passages (TOON format - compact, human-readable):\n"
         f"{user_payload}\n{conv_context}\n"
         "Rules:\n"
         "- Cite only passages that directly support the answer.\n"
