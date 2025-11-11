@@ -95,13 +95,13 @@ except Exception as e:
     logger.error(f"Failed to configure genai: {e}")
     raise
 
-# Default model: Gemini 2.5 Flash Lite Preview (same as main.py)
-DEFAULT_MODEL = "gemini-2.5-flash-lite-preview-09-2025"
+# Default model: Gemini 2.5 Flash
+DEFAULT_MODEL = "gemini-2.5-flash"
 
 # Supported models with fallback order
 SUPPORTED_MODELS = [
-    "gemini-2.5-flash-lite-preview-09-2025",
     "gemini-2.5-flash",
+    "gemini-2.5-flash-lite-preview-09-2025",
     "gemini-2.0-flash-exp",
     "gemini-2.0-flash",
     "gemini-1.5-flash",
