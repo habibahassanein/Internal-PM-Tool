@@ -414,7 +414,7 @@ Return JSON only.
     if _api_manager:
         def _generate_intent():
             configure_genai()  # Ensure genai is configured with current key
-            model = genai.GenerativeModel("gemini-2.0-flash-lite")  # Use same model as other modules
+            model = genai.GenerativeModel("gemini-2.5-flash")  # Use same model as other modules
             response = model.generate_content(prompt)
             return response.text.strip()
         
