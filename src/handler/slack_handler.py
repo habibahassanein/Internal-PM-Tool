@@ -12,7 +12,10 @@ import time
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-import streamlit as st
+
+
+_CLIENT_CACHE: Dict[str, WebClient] = {}
+_USERNAME_CACHE: Dict[str, str] = {}
 
 from .channel_intelligence import get_channel_intelligence, ChannelIntelligence  # Use external module
 
@@ -431,22 +434,16 @@ def _identify_thread_candidates(
 
 def _get_slack_client(user_token: Optional[str] = None) -> WebClient:
     """Get Slack client; requires authenticated user's token (no fallback)."""
-    token = user_token or st.session_state.get("slack_token")
-
-    # DEBUG: Log token source and status
-    if user_token:
-        logger.info(f"🔑 Using provided user_token (prefix: {user_token[:10]}...)")
-    elif st.session_state.get("slack_token"):
-        logger.info(f"🔑 Using session_state slack_token (prefix: {st.session_state.get('slack_token')[:10]}...)")
-    else:
-        logger.error("🚫 No Slack token available from either source!")
-
+    token = user_token
     if not token:
-        raise RuntimeError("Missing Slack token. Authenticate via OAuth.")
+        raise RuntimeError("Missing Slack token. Authenticate via OAuth and provide it to the MCP server.")
+
     cache_key = f"slack_client_{hash(token)}"
-    if cache_key not in st.session_state:
-        st.session_state[cache_key] = WebClient(token=token)
-    return st.session_state[cache_key]
+    client = _CLIENT_CACHE.get(cache_key)
+    if client is None:
+        client = WebClient(token=token)
+        _CLIENT_CACHE[cache_key] = client
+    return client
 
 
 def _resolve_username(client: WebClient, user_id: Optional[str]) -> str:
@@ -454,10 +451,8 @@ def _resolve_username(client: WebClient, user_id: Optional[str]) -> str:
     if not user_id:
         return "Unknown User"
     
-    # Use session state for caching
-    cache_key = f"user_cache_{user_id}"
-    if cache_key in st.session_state:
-        return st.session_state[cache_key]
+    if user_id in _USERNAME_CACHE:
+        return _USERNAME_CACHE[user_id]
     
     try:
         resp = client.users_info(user=user_id)
@@ -474,13 +469,13 @@ def _resolve_username(client: WebClient, user_id: Optional[str]) -> str:
         else:
             username = f"User {user_id}"
         
-        st.session_state[cache_key] = username
+        _USERNAME_CACHE[user_id] = username
         return username
         
     except Exception as e:
         logger.warning(f"Failed to resolve username for {user_id}: {e}")
         fallback = f"User {user_id}"
-        st.session_state[cache_key] = fallback
+        _USERNAME_CACHE[user_id] = fallback
         return fallback
 
 
@@ -1605,4 +1600,36 @@ def search_slack(
     return ranked_results
 
 
-__all__ = ["search_slack"]
+def search_slack_simplified(
+    query: str,
+    intent_data: Optional[Dict[str, Any]] = None,
+    max_results: int = 15,
+    user_token: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """
+    Backwards-compatible helper used by legacy LangChain tooling.
+    Falls back to default intent data when none is provided.
+    """
+    if not intent_data:
+        query_terms = query.lower().split()
+        keywords = [term for term in query_terms if len(term) > 2]
+        intent_data = {
+            "slack_params": {
+                "keywords": keywords,
+                "priority_terms": keywords[:3],
+                "channels": "all",
+                "time_range": "all",
+                "limit": max_results,
+            }
+        }
+    
+    results = search_slack(
+        user_query=query,
+        intent_data=intent_data,
+        max_total_results=max_results,
+        user_token=user_token
+    )
+    return results
+
+
+__all__ = ["search_slack", "search_slack_simplified"]

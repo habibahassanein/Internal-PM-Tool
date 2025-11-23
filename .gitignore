@@ -19,6 +19,9 @@ venv/
 env/
 ENV/
 .venv
+.venv*/
+.venv_mcp*/
+.venv_mcp311/
 
 # IDEs
 .vscode/

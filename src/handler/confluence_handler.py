@@ -7,43 +7,34 @@ from html import unescape
 from typing import List, Optional
 
 from atlassian import Confluence
-import streamlit as st
-
 
 logger = logging.getLogger(__name__)
 
 
 def _get_confluence_client() -> Confluence:
-    
-    url = None
-    email = None
-    api_token = None
-    
-    used_streamlit_secrets = False
-    try:
-        url = st.secrets.get("CONFLUENCE_URL")
-        email = st.secrets.get("CONFLUENCE_EMAIL")
-        api_token = st.secrets.get("CONFLUENCE_API_TOKEN")
-        used_streamlit_secrets = any([url, email, api_token])
-    except Exception:
-        logger.debug("Streamlit secrets unavailable when configuring Confluence client")
-    
-    # Fallback to environment variables if Streamlit secrets missing
-    url = url or os.getenv("CONFLUENCE_URL")
-    email = email or os.getenv("CONFLUENCE_EMAIL")
-    api_token = api_token or os.getenv("CONFLUENCE_API_TOKEN")
-    
+    """Get Confluence client using environment variables only."""
+
+    # Load from environment variables
+    url = os.getenv("CONFLUENCE_URL")
+    email = os.getenv("CONFLUENCE_EMAIL")
+    api_token = os.getenv("CONFLUENCE_API_TOKEN")
+
+    # Check for missing credentials
     if not (url and email and api_token):
+        missing = []
+        if not url:
+            missing.append("CONFLUENCE_URL")
+        if not email:
+            missing.append("CONFLUENCE_EMAIL")
+        if not api_token:
+            missing.append("CONFLUENCE_API_TOKEN")
         raise RuntimeError(
-            "Missing Confluence credentials. Ensure CONFLUENCE_URL, "
-            "CONFLUENCE_EMAIL, and CONFLUENCE_API_TOKEN are set."
+            f"Missing Confluence credentials: {', '.join(missing)}. "
+            "Ensure they are set in environment variables or .env file."
         )
-    
+
     client = Confluence(url=url, username=email, password=api_token, cloud=True)
-    logger.info(
-        "Initialized Confluence client using %s configuration",
-        "Streamlit secrets" if used_streamlit_secrets else "environment variables"
-    )
+    logger.info("Initialized Confluence client using environment variables")
     return client
 
 
@@ -146,8 +137,8 @@ def search_confluence(query: str, max_results: int = 10, space_key: Optional[str
                         # Extract title
                         title = content.get("title", "Untitled")
                         
-                        # Extract URL first (needed for space extraction)
-                        base_url = (st.secrets.get("CONFLUENCE_URL", "") or "").rstrip("/")
+                        # Extract URL from environment variables
+                        base_url = (os.getenv("CONFLUENCE_URL", "") or "").rstrip("/")
                         links = content.get("_links", {})
                         webui = links.get("webui", "")
                         url = f"{base_url}{webui}" if base_url and webui else ""
@@ -287,7 +278,8 @@ def _alternative_confluence_search(client: Confluence, query: str, max_results: 
                         else:
                             continue  # No match, skip this page
                     
-                    base_url = (st.secrets.get("CONFLUENCE_URL", "") or "").rstrip("/")
+                    # Extract URL from environment variables
+                    base_url = (os.getenv("CONFLUENCE_URL", "") or "").rstrip("/")
                     webui = page.get("_links", {}).get("webui", "")
                     url = f"{base_url}{webui}" if base_url and webui else ""
                     
@@ -322,6 +314,13 @@ def _alternative_confluence_search(client: Confluence, query: str, max_results: 
         logger.error(f"Alternative search failed: {e}")
     
     return results
+
+
+def search_confluence_pages(query: str, max_results: int = 10, space_key: Optional[str] = None) -> List[dict]:
+    """
+    Backwards-compatible wrapper expected by MCP tooling layer.
+    """
+    return search_confluence(query, max_results, space_key)
 
 
 def search_confluence_optimized(intent_data: dict, user_query: str) -> List[dict]:
@@ -359,4 +358,4 @@ def search_confluence_optimized(intent_data: dict, user_query: str) -> List[dict
     return search_confluence(search_query, limit, spaces)
 
 
-__all__ = ["search_confluence", "search_confluence_optimized"]
+__all__ = ["search_confluence", "search_confluence_optimized", "search_confluence_pages"]
