@@ -1,9 +1,3 @@
-"""
-API Manager for Gemini API Key Rotation and Load Balancing.
-
-This module provides functionality to manage multiple API keys,
-rotate between them, and handle quota/rate limit issues automatically.
-"""
 
 import random
 import time

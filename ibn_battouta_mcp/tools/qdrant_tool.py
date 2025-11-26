@@ -1,19 +1,10 @@
-"""
-Qdrant vector search tool for MCP server.
-Searches the knowledge base (Incorta docs, community, support articles).
-"""
-import sys
+
 import os
 from typing import Dict, Any
-from pathlib import Path
-
-parent_dir = Path(__file__).parent.parent.parent
-if str(parent_dir) not in sys.path:
-    sys.path.insert(0, str(parent_dir))
 
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
-from ibn_battouta_mcp.context.user_context import user_context
+from context.user_context import user_context
 
 
 # Global resources (loaded once at module level)

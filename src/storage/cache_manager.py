@@ -1,9 +1,3 @@
-"""
-Cache Manager for search results and API responses.
-
-Provides in-memory caching with TTL support to reduce API calls
-and improve response times for repeated queries.
-"""
 
 from __future__ import annotations
 

@@ -1,17 +1,10 @@
-"""
-Slack search tool for MCP server.
-Wraps existing slack_handler functionality.
-"""
+
 import sys
 from typing import Dict, Any, List
 from pathlib import Path
 
-parent_dir = Path(__file__).parent.parent.parent
-if str(parent_dir) not in sys.path:
-    sys.path.insert(0, str(parent_dir))
-
-from src.handler.slack_handler import search_slack_simplified
-from ibn_battouta_mcp.context.user_context import user_context
+from handlers.slack_handler import search_slack_simplified
+from context.user_context import user_context
 
 
 def search_slack(arguments: Dict[str, Any]) -> dict:

@@ -1,19 +1,11 @@
-"""
-Confluence search tool for MCP server.
-Wraps existing confluence_handler functionality.
-"""
+
 import sys
 import os
 from typing import Dict, Any
 from pathlib import Path
 
-# Add parent directory to path for src imports
-parent_dir = Path(__file__).parent.parent.parent
-if str(parent_dir) not in sys.path:
-    sys.path.insert(0, str(parent_dir))
-
-from src.handler.confluence_handler import search_confluence_pages
-from ibn_battouta_mcp.context.user_context import user_context
+from handlers.confluence_handler import search_confluence_pages
+from context.user_context import user_context
 
 
 def search_confluence(arguments: Dict[str, Any]) -> dict:

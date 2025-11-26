@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""
-Manual session creation script.
-Use this to create a session ID when OAuth flow is not accessible.
 
-Usage:
-    python create_session.py <slack_user_token>
-
-Example:
-    python create_session.py xoxp-your-slack-token-here
-"""
 
 import sys
 from auth.session_manager import get_session_manager

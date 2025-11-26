@@ -1,9 +1,3 @@
-"""
-Gemini handler for AI-powered search result analysis and answer generation.
-
-Combines structured citation extraction with conversational capabilities,
-model fallback, and enhanced error handling.
-"""
 
 from __future__ import annotations
 

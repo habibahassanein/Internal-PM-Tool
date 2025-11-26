@@ -1,0 +1,67 @@
+{
+  "manifest_version": "0.3",
+  "name": "ibn-battouta",
+  "version": "1.0.0",
+  "display_name": "Ibn Battouta - PM Intelligence",
+  "description": "Multi-source Product Management intelligence server. Integrates Confluence, Slack, Qdrant, Zendesk, and Jira for comprehensive PM insights.",
+  "author": {
+    "name": "Habiba Hassanein"
+  },
+  "server": {
+    "type": "python",
+    "entry_point": "server_stdio.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with", "mcp[cli]>=1.12.0",
+        "--with", "python-dotenv",
+        "--with", "requests",
+        "--with", "httpx",
+        "--with", "qdrant-client",
+        "--with", "sentence-transformers",
+        "--with", "slack-sdk",
+        "--with", "atlassian-python-api",
+        "python",
+        "${__dirname}/server_stdio.py"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "initialize_pm_intelligence",
+      "description": "Initialize session with PM intelligence guidelines"
+    },
+    {
+      "name": "search_confluence",
+      "description": "Search Confluence for internal documentation"
+    },
+    {
+      "name": "search_slack",
+      "description": "Search Slack messages for team discussions"
+    },
+    {
+      "name": "search_knowledge_base",
+      "description": "Vector search on Incorta knowledge base"
+    },
+    {
+      "name": "get_zendesk_schema",
+      "description": "Get Zendesk schema structure"
+    },
+    {
+      "name": "query_zendesk",
+      "description": "Query Zendesk customer support data"
+    },
+    {
+      "name": "get_jira_schema",
+      "description": "Get Jira schema structure"
+    },
+    {
+      "name": "query_jira",
+      "description": "Query Jira development data"
+    }
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"]
+  }
+}

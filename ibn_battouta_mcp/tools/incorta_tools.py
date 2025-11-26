@@ -1,18 +1,10 @@
-"""
-Incorta tools for querying Zendesk and Jira data.
-Uses your existing Incorta integration.
-"""
-import sys
+
+
 import os
 from typing import Dict, Any
-from pathlib import Path
 import requests
 
-parent_dir = Path(__file__).parent.parent.parent
-if str(parent_dir) not in sys.path:
-    sys.path.insert(0, str(parent_dir))
-
-from ibn_battouta_mcp.context.user_context import user_context
+from context.user_context import user_context
 
 
 def login_to_incorta():

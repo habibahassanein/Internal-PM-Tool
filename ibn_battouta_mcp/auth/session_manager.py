@@ -1,9 +1,4 @@
-"""
-Session Manager for Multi-User MCP Server
 
-Manages user sessions and Slack tokens for multiple concurrent users.
-Each user authenticates once via OAuth and receives a session ID.
-"""
 
 import secrets
 import time

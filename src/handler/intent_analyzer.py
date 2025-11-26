@@ -1,9 +1,4 @@
-"""
-Intent analyzer for query understanding and search parameter extraction.
 
-This module provides intelligent intent analysis using AI-powered analysis
-with Gemini API, along with rule-based preprocessing for better performance.
-"""
 
 from __future__ import annotations
 

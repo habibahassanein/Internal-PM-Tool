@@ -53,3 +53,9 @@ data/*.jsonl
 
 # Logs
 *.log
+
+# MCP binary files
+*.mcpb
+
+# Claude configuration
+.claude/

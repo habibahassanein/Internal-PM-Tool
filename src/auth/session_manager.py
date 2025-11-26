@@ -1,6 +1,4 @@
-"""
-Session management with SQLite storage for audit trail and user tracking.
-"""
+
 
 import sqlite3
 import streamlit as st

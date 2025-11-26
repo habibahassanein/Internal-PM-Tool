@@ -1,9 +1,3 @@
-"""
-Product Manager Agent for LangChain ReAct Agent Executor.
-
-Provides agent tools and setup for searching across multiple knowledge sources
-including Confluence, Slack, Docs, Zendesk, and Jira.
-"""
 
 from typing import List, Optional, Set
 import logging
@@ -22,6 +16,24 @@ from ..handler.intent_analyzer import analyze_user_intent
 from ..storage.cache_manager import get_cached_search_results, cache_search_results
 
 logger = logging.getLogger(__name__)
+
+
+def _env_int(name: str, default: int) -> int:
+    """
+    Safely parse positive integers from environment variables.
+    """
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        parsed = int(raw_value)
+        return parsed if parsed > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+MANDATORY_SEARCH_RESULT_LIMIT = _env_int("MANDATORY_SEARCH_RESULT_LIMIT", 4)
+MANDATORY_SNIPPET_LENGTH = _env_int("MANDATORY_SEARCH_SNIPPET_LIMIT", 220)
 
 
 def _get_secret_or_env(name: str, default: str = "") -> str:
@@ -372,6 +384,87 @@ def search_docs(query: str, limit: int = 5) -> List[dict]:
         return []
 
 
+def _truncate_snippet(text: str, limit: int = MANDATORY_SNIPPET_LENGTH) -> str:
+    """Compact helper to trim snippets for prompt context."""
+    if not text:
+        return ""
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+def _format_baseline_block(label: str, results: List[dict]) -> str:
+    """Format mandatory baseline search results for prompt injection."""
+    header = f"{label} ({len(results)} result(s)):"
+    if not results:
+        return f"{header}\n- No results returned."
+
+    lines = [header]
+    for item in results[:MANDATORY_SEARCH_RESULT_LIMIT]:
+        title = (item.get("title") or item.get("text") or "Untitled").strip()
+        snippet = _truncate_snippet(
+            item.get("excerpt") or item.get("text") or "", MANDATORY_SNIPPET_LENGTH
+        )
+        url = item.get("url") or item.get("permalink") or item.get("link") or ""
+        line_parts = [f"- {title}"]
+        if snippet:
+            line_parts.append(f":: {snippet}")
+        if url:
+            line_parts.append(f"[{url}]")
+        lines.append(" ".join(line_parts))
+    return "\n".join(lines)
+
+
+def build_mandatory_search_context(query: str) -> str:
+    """
+    Run mandatory Confluence + Knowledge Base searches and return formatted context.
+    """
+    cleaned_query = (query or "").strip()
+    if not cleaned_query:
+        return (
+            "Mandatory baseline searches skipped: empty query. Prompt the user for more "
+            "details before answering."
+        )
+
+    confluence_results: List[dict] = []
+    knowledge_results: List[dict] = []
+
+    try:
+        confluence_results = search_confluence_tool(
+            cleaned_query, max_results=MANDATORY_SEARCH_RESULT_LIMIT
+        )
+    except Exception as exc:
+        logger.error(f"Mandatory Confluence search failed: {exc}")
+
+    try:
+        knowledge_results = search_docs(
+            cleaned_query, limit=MANDATORY_SEARCH_RESULT_LIMIT
+        )
+    except Exception as exc:
+        logger.error(f"Mandatory knowledge base search failed: {exc}")
+
+    context_sections = [
+        "Mandatory baseline search context (auto-run for every query):",
+        _format_baseline_block("Confluence", confluence_results),
+        _format_baseline_block("Knowledge Base", knowledge_results),
+        "Zendesk/Jira remain opt-in unless the user explicitly asks for them.",
+    ]
+    return "\n".join(context_sections)
+
+
+def _augment_inputs_with_baseline(inputs: dict) -> dict:
+    """Attach mandatory baseline search context to agent inputs."""
+    augmented_inputs = dict(inputs or {})
+    query_text = ""
+    try:
+        query_text = augmented_inputs.get("input", "")
+    except AttributeError:
+        query_text = ""
+    augmented_inputs["presearch_context"] = build_mandatory_search_context(query_text)
+    return augmented_inputs
+
+
 @tool(
     "fetch_schema_details",
     description="""Fetch the details of a schema from Incorta.
@@ -588,10 +681,12 @@ class RetryAgentExecutor:
         attempt = 0
         last_error = None
 
+        augmented_inputs = _augment_inputs_with_baseline(inputs)
+
         while attempt < self.max_retries:
             try:
                 # Stream from current executor
-                for chunk in self.current_executor.stream(inputs):
+                for chunk in self.current_executor.stream(dict(augmented_inputs)):
                     yield chunk
 
                 # If we get here, execution succeeded
@@ -628,6 +723,25 @@ class RetryAgentExecutor:
 
         # If we exit the loop, all retries failed
         raise Exception(f"Failed after {self.max_retries} attempts") from last_error
+
+
+class MandatorySearchWrapper:
+    """Ensure mandatory baseline searches run before delegating to the underlying executor."""
+
+    def __init__(self, executor):
+        self._executor = executor
+
+    def stream(self, inputs: dict):
+        augmented_inputs = _augment_inputs_with_baseline(inputs)
+        for chunk in self._executor.stream(augmented_inputs):
+            yield chunk
+
+    def invoke(self, inputs: dict, **kwargs):
+        augmented_inputs = _augment_inputs_with_baseline(inputs)
+        return self._executor.invoke(augmented_inputs, **kwargs)
+
+    def __getattr__(self, item):
+        return getattr(self._executor, item)
 
 
 def create_pm_agent(api_key: Optional[str] = None):
@@ -669,6 +783,11 @@ def create_pm_agent(api_key: Optional[str] = None):
 Your available tools are:
 {tools}
 
+MANDATORY BASELINE CONTEXT (auto-run knowledge_base + Confluence searches):
+{presearch_context}
+
+Review the mandatory context before taking ANY action. These snippets already come from `search_docs` and `search_confluence_pages`. Rerun the tools if you need fresher or more targeted evidence, but never skip citing the authoritative sources they provide.
+
 IMPORTANT SEARCH GUIDELINES:
 
 1. Use `search_confluence_pages` to find Confluence documentation:
@@ -692,6 +811,7 @@ IMPORTANT SEARCH GUIDELINES:
 CRITICAL SEARCH STRATEGY WITH SOURCE PRIORITIZATION:
 
 **Source Priority Detection:**
+- Regardless of query type, ALWAYS ground your final answer in both knowledge_base and Confluence results. This requirement is non-negotiable and is satisfied initially via the mandatory baseline context above.
 - If the user's query mentions "slack", "channel", "message", "conversation", or "#channelname":
   → PRIORITIZE searching Slack FIRST, then other sources
 - If the user's query mentions "docs", "documentation", "knowledge base", "kb", "guide", "tutorial":
@@ -712,6 +832,7 @@ CRITICAL SEARCH STRATEGY WITH SOURCE PRIORITIZATION:
 - After searching all sources, synthesize a comprehensive answer from ALL results
 
 CRITICAL RESPONSE RULES:
+0. Confirm that the Final Answer references both knowledge_base and Confluence evidence (or explicitly states when one source returned no results). Do not finish until this is true.
 1. NEVER HALLUCINATE OR INVENT SOURCES
    - If a tool returns empty results [], DO NOT make up page names or references
    - If Confluence returns 0 results, say "No Confluence pages found"
@@ -764,7 +885,7 @@ Thought:{agent_scratchpad}"""
     )
 
     agent = create_react_agent(llm, tools, prompt)
-    agent_executor = AgentExecutor(
+    base_executor = AgentExecutor(
         agent=agent,
         tools=tools,
         handle_parsing_errors=True,
@@ -772,7 +893,7 @@ Thought:{agent_scratchpad}"""
         max_iterations=10
     )
 
-    return agent_executor
+    return MandatorySearchWrapper(base_executor)
 
 
 __all__ = [
