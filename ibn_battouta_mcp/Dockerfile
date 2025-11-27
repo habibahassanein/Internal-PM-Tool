@@ -17,16 +17,14 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy MCP server requirements
-COPY requirements.txt .
-
 # Add user local bin to PATH to suppress warnings
 ENV PATH=/root/.local/bin:$PATH
 
+# Copy MCP server requirements
+COPY . .
+
 # Install Python dependencies
 RUN pip install -r requirements.txt
-
-COPY . /app
 
 # Expose port if using HTTP transport (not needed for stdio)
 EXPOSE 8080
