@@ -16,8 +16,6 @@ COPY requirements.txt .
 # Add user local bin to PATH to suppress warnings
 ENV PATH=/root/.local/bin:$PATH
 
-COPY --from=builder /root/.local /usr/local
-
 # Install Python dependencies
 RUN pip install -r requirements.txt --system
 
