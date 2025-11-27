@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y \
 # Copy MCP server requirements
 COPY requirements.txt .
 
+# Add user local bin to PATH to suppress warnings
+ENV PATH=/root/.local/bin:$PATH
+
 # Install Python dependencies
 RUN pip install --no-cache-dir --user -r requirements.txt
 
