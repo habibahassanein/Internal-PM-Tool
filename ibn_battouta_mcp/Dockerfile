@@ -19,9 +19,9 @@ ENV PATH=/root/.local/bin:$PATH
 COPY --from=builder /root/.local /usr/local
 
 # Install Python dependencies
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install -r requirements.txt --system
 
-COPY . .
+COPY . /app
 
 # Expose port if using HTTP transport (not needed for stdio)
 EXPOSE 8080
