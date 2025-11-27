@@ -27,11 +27,11 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Python dependencies from builder to a location accessible by all users
-COPY --from=builder /root/.local /usr/local
-
 # Ensure Python scripts are on PATH
 ENV PATH="/usr/local/bin:${PATH}"
+
+# Copy Python dependencies from builder to a location accessible by all users
+COPY --from=builder /root/.local /usr/local
 
 # Copy application code only (no src dependency)
 COPY ibn_battouta_mcp/ ./ibn_battouta_mcp/
