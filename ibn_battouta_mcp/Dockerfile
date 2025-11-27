@@ -24,7 +24,7 @@ COPY requirements.txt .
 ENV PATH=/root/.local/bin:$PATH
 
 # Install Python dependencies
-RUN pip install -r requirements.txt --system
+RUN pip install -r requirements.txt
 
 COPY . /app
 
