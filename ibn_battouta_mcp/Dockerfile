@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy MCP server requirements
-COPY ibn_battouta_mcp/requirements.txt .
+COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --user -r requirements.txt
@@ -41,11 +41,11 @@ RUN useradd -m -u 1000 mcp && chown -R mcp:mcp /app
 USER mcp
 
 # Expose port if using HTTP transport (not needed for stdio)
-# EXPOSE 8000
+EXPOSE 8080
 
 # Health check (adjust based on your needs)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import sys; sys.exit(0)"
 
 # Default command - runs the stdio server
-CMD ["python", "server_stdio.py"]
+CMD ["python", "server.py"]

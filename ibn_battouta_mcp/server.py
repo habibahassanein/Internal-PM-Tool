@@ -31,7 +31,7 @@ from auth.session_manager import get_session_manager
 logger = logging.getLogger("ibn-battouta-mcp-server")
 logging.basicConfig(level=logging.INFO)
 
-IBN_BATTOUTA_MCP_PORT = 8081  # Different from Incorta MCP (8080)
+IBN_BATTOUTA_MCP_PORT = 8080  # Different from Incorta MCP (8080)
 
 
 @click.command()

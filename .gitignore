@@ -59,3 +59,5 @@ data/*.jsonl
 
 # Claude configuration
 .claude/
+
+instance-7196.pem
