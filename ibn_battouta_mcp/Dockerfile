@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y \
 ENV PATH=/root/.local/bin:$PATH
 
 # Copy MCP server requirements
-COPY .env /app
+COPY .env /app/.env
 
 COPY . /app
 
