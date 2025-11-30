@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y \
 ENV PATH=/root/.local/bin:$PATH
 
 # Copy MCP server requirements
-COPY . .
+COPY . /app
 
 # Install Python dependencies
 RUN pip install -r requirements.txt
