@@ -1,5 +1,5 @@
 # Multi-stage build for Ibn Battouta MCP Server
-FROM ghcr.io/astral-sh/uv:python3.11-bookworm
+FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
@@ -20,12 +20,11 @@ RUN apt-get update && apt-get install -y \
 # Add user local bin to PATH to suppress warnings
 ENV PATH=/root/.local/bin:$PATH
 
+COPY .env /app
 COPY . /app
 
 # Install Python dependencies
-# RUN pip install -r requirements.txt
-
-RUN uv pip install -r requirements.txt --system
+RUN pip install -r requirements.txt
 
 # Expose port if using HTTP transport (not needed for stdio)
 EXPOSE 8080
