@@ -93,7 +93,7 @@ def upload_vectors():
                 payload={
                     "url": row.get("url", ""),
                     "title": row.get("title", ""),
-                    "text": row.get("cleaned_content", "")[:10000],  # Limit text to 10k chars for payload
+                    "text": row.get("cleaned_content", "")[:50000],  # Increased limit to preserve tables and structured data
                 }
             )
             points.append(point)

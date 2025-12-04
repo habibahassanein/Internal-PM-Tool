@@ -58,8 +58,8 @@ class CsvSeedSpider(scrapy.Spider):
     def parse_page(self, response, title, source):
         http_status = response.status
         html = response.text
-        # Clean main content with trafilatura
-        text = trafi_extract(html, include_comments=False, include_tables=False) or ""
+        # Clean main content with trafilatura (include tables for structured data like support dates)
+        text = trafi_extract(html, include_comments=False, include_tables=True) or ""
         text = text.strip()
         self._upsert_page(url=response.url, source=source, title=title,
                           text=text, http_status=http_status)

@@ -135,34 +135,34 @@ def main(port: int, log_level: str, json_response: bool) -> int:
                     }
                 ),
             ),
-            # types.Tool(
-            #     name="search_slack",
-            #     description=(
-            #         "Search Slack messages for team discussions, announcements, and real-time updates. "
-            #         "Best for: latest updates, informal knowledge, team discussions, recent announcements. "
-            #         "Returns: Message text, username, channel, timestamp, permalink with source='slack'."
-            #     ),
-            #     inputSchema=make_search_schema(
-            #         "Search query for Slack messages",
-            #         {
-            #             "max_results": {
-            #                 "type": "integer",
-            #                 "description": "Maximum number of results to return",
-            #                 "default": 10,
-            #                 "minimum": 1
-            #             },
-            #             "channel_filter": {
-            #                 "type": "string",
-            #                 "description": "Optional: Specific channel to search"
-            #             },
-            #             "max_age_hours": {
-            #                 "type": "integer",
-            #                 "description": "Maximum age of messages in hours (default: 168 = 1 week)",
-            #                 "default": 168
-            #             }
-            #         }
-            #     ),
-            # ),
+            types.Tool(
+                name="search_slack",
+                description=(
+                    "Search Slack messages for team discussions, announcements, and real-time updates. "
+                    "Best for: latest updates, informal knowledge, team discussions, recent announcements. "
+                    "Returns: Message text, username, channel, timestamp, permalink with source='slack'."
+                ),
+                inputSchema=make_search_schema(
+                    "Search query for Slack messages",
+                    {
+                        "max_results": {
+                            "type": "integer",
+                            "description": "Maximum number of results to return",
+                            "default": 10,
+                            "minimum": 1
+                        },
+                        "channel_filter": {
+                            "type": "string",
+                            "description": "Optional: Specific channel to search"
+                        },
+                        "max_age_hours": {
+                            "type": "integer",
+                            "description": "Maximum age of messages in hours (default: 168 = 1 week)",
+                            "default": 168
+                        }
+                    }
+                ),
+            ),
             types.Tool(
                 name="search_knowledge_base",
                 description=(
@@ -242,9 +242,9 @@ def main(port: int, log_level: str, json_response: bool) -> int:
                 result = search_confluence(arguments)
                 return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
 
-            # elif name == "search_slack":
-            #     result = search_slack(arguments)
-            #     return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
+            elif name == "search_slack":
+                result = search_slack(arguments)
+                return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
 
             elif name == "search_knowledge_base":
                 result = search_knowledge_base(arguments)
