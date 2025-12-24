@@ -1,0 +1,28 @@
+# Ibn Battouta MCP Server Dependencies
+
+# MCP Protocol
+mcp[cli]==1.12.3
+
+# Web Server
+starlette>=0.47.2
+uvicorn[standard]>=0.35.0
+
+# HTTP Client
+requests==2.32.4
+httpx>=0.24.0
+
+# Data Sources
+qdrant-client==1.12.0
+sentence-transformers
+slack-sdk==3.27.1
+atlassian-python-api==3.41.3
+
+# Utilities
+python-dotenv==1.0.1
+click>=8.2.1
+rich==14.1.0
+
+# Note: No Gemini/LangChain dependencies!
+# Claude (MCP client) handles all LLM operations
+
+aiohttp
