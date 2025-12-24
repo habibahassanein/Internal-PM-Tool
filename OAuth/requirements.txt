@@ -26,4 +26,4 @@ rich==14.1.0
 # Claude (MCP client) handles all LLM operations
 
 aiohttp
-fastmcp
+fastmcp==2.11.2
