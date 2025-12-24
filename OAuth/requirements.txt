@@ -18,7 +18,7 @@ slack-sdk==3.27.1
 atlassian-python-api==3.41.3
 
 # Utilities
-python-dotenv==1.0.1
+python-dotenv
 click>=8.2.1
 rich==14.1.0
 
