@@ -20,8 +20,7 @@ class SlackOAuthConfig:
 
     def __init__(self):
         # Base server configuration
-        # self.base_uri = os.getenv("SLACK_MCP_BASE_URI", "http://localhost")
-        self.base_uri = "https://figured-evening-bin-blessed.trycloudflare.com"
+        self.base_uri = os.getenv("MCP_URL", "http://localhost")
         self.port = 8080
         # Determine base URL (with port if not already specified in base_uri)
         parsed = urlparse(self.base_uri)
