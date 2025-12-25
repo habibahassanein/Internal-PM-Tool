@@ -16,7 +16,10 @@ from auth.session_middleware import SlackSessionMiddleware
 from context.user_context import user_context
 from tools.confluence_tool import search_confluence
 from tools.slack_tool import search_slack
-from tools.qdrant_tool import search_knowledge_base
+# from tools.qdrant_tool import search_knowledge_base
+from tools.search_community_tool import fetch_community_tool
+from tools.search_docs_tool import fetch_docs_tool, DocVersion
+from tools.search_support_tool import fetch_support_tool
 from tools.incorta_tools import query_zendesk, query_jira, get_zendesk_schema, get_jira_schema
 from dotenv import load_dotenv
 
@@ -143,6 +146,8 @@ def slack_get_oauth_url() -> dict:
     **USAGE:** Call this tool when search_slack fails due to missing authentication.
     The user must visit the returned URL to authorize access before using search_slack.
 
+    By default use `search_slack` first before calling this tool.
+
     Returns:
         Dictionary with authorization URL and instructions
     """
@@ -154,8 +159,7 @@ def slack_get_oauth_url() -> dict:
             "ok": False,
             "error": "OAuth not configured. Please set SLACK_CLIENT_ID and SLACK_CLIENT_SECRET.",
         }
-
-    # Get session ID from FastMCP context
+    
     session_id = None
     try:
         ctx = get_context()
@@ -173,42 +177,87 @@ def slack_get_oauth_url() -> dict:
             "error": "No session ID found. Unable to generate OAuth URL.",
         }
 
-    # Generate cryptographic state for CSRF protection
     store = get_session_store()
     state = store.generate_oauth_state(session_id)
 
     return {
-        "ok": True,
         "authorization_url": config.get_authorization_url(state=state),
         "instructions": (
             "Visit the authorization URL to authenticate. "
-            "After authorization, you'll receive a user_id to use with other tools."
         ),
     }
 
-
 @mcp.tool(
-    "search_knowledge_base",
+    "search_community",
     description=(
-        "Search the knowledge base using vector similarity. Contains Incorta Community articles, "
-        "official documentation, and support articles. "
-        "Best for: product features, official documentation, authoritative product information. "
-        "Returns: Article titles, URLs, text excerpts, relevance scores with source='knowledge_base'. "
+        "Search Incorta Community forums for user discussions, solutions, and tips. "
+        "Best for: user experiences, community solutions, practical tips. "
+        "Returns: Post titles, URLs, excerpts with source='community'. "
         "\n\n**USAGE RULES:**\n"
-        "- Run this tool for EVERY query before producing an answer (mandatory baseline search).\n"
-        "- Use for: Official product docs, community articles, support content, authoritative information.\n"
-        "- Source Priority: HIGHEST for product features & documentation, HIGH for troubleshooting.\n"
-        "- Citation: Always include source='knowledge_base', preserve technical details (versions, dates, IDs).\n"
-        "- Multi-Source Synthesis: Cross-reference with confluence and other sources when available.\n"
-        "- Upgrade Queries: For upgrade questions, search for 'Incorta Release Support Policy' and version-specific considerations."
+        "- Use for: User experiences, community solutions, practical tips.\n"
+        "- Source Priority: HIGH for troubleshooting & practical tips.\n"
+        "- Citation: Always include source='community' and quote key evidence from results."
     )
 )
-def tool_search_knowledge_base(query: str, limit: int = 10):
-    args = {
-        "query": query,
-        "limit": limit
-    }
-    return search_knowledge_base(args)
+def tool_search_community(query: str, max_results: int = 5):
+    return fetch_community_tool(query=query, max_results=max_results)
+
+
+@mcp.tool(
+    "search_docs",
+    description=(
+        "Search Incorta official documentation for product features, setup guides, and technical details. "
+        "Best for: product features, official documentation, setup instructions. "
+        "Returns: Document titles, URLs, excerpts with source='docs'. "
+        "\n\n**USAGE RULES:**\n"
+        "- Use for: Official product docs, setup guides, technical details.\n"
+        "- Source Priority: HIGHEST for product features & documentation.\n"
+        "- Citation: Always include source='docs' and quote key evidence from results."
+        "- Versioning: Specify document version when relevant to ensure accurate info. (Available versions: latest, cloud, 6.0, 5.2, 5.1)"
+    )
+)
+def tool_search_docs(query: str, max_results: int = 5, version: DocVersion = DocVersion.LATEST.value):
+    return fetch_docs_tool(query=query, max_results=max_results, version=version)
+
+
+@mcp.tool(
+    "search_support",
+    description=(
+        "Search Incorta Support articles for troubleshooting steps, known issues, and resolutions. "
+        "Best for: troubleshooting, known issues, error resolutions. "
+        "Returns: Article titles, URLs, excerpts with source='support'. "
+        "\n\n**USAGE RULES:**\n"
+        "- Use for: Troubleshooting, known issues, error resolutions.\n"
+        "- Source Priority: HIGHEST for troubleshooting & error resolutions.\n"
+        "- Citation: Always include source='support' and quote key evidence from results."
+    )
+)
+def tool_search_support(query: str, max_results: int = 5):
+    return fetch_support_tool(query=query, max_results=max_results)
+
+
+# @mcp.tool(
+#     "search_knowledge_base",
+#     description=(
+#         "Search the knowledge base using vector similarity. Contains Incorta Community articles, "
+#         "official documentation, and support articles. "
+#         "Best for: product features, official documentation, authoritative product information. "
+#         "Returns: Article titles, URLs, text excerpts, relevance scores with source='knowledge_base'. "
+#         "\n\n**USAGE RULES:**\n"
+#         "- Run this tool for EVERY query before producing an answer (mandatory baseline search).\n"
+#         "- Use for: Official product docs, community articles, support content, authoritative information.\n"
+#         "- Source Priority: HIGHEST for product features & documentation, HIGH for troubleshooting.\n"
+#         "- Citation: Always include source='knowledge_base', preserve technical details (versions, dates, IDs).\n"
+#         "- Multi-Source Synthesis: Cross-reference with confluence and other sources when available.\n"
+#         "- Upgrade Queries: For upgrade questions, search for 'Incorta Release Support Policy' and version-specific considerations."
+#     )
+# )
+# def tool_search_knowledge_base(query: str, limit: int = 10):
+#     args = {
+#         "query": query,
+#         "limit": limit
+#     }
+#     return search_knowledge_base(args)
 
 
 @mcp.tool(
