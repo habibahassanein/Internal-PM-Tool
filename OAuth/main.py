@@ -70,11 +70,10 @@ mcp = SecureFastMCP("Internal PM Tool MCP Server")
         "Best for: internal processes, best practices, detailed project documentation. "
         "Returns: Page titles, URLs, excerpts with source='confluence'. "
         "\n\n**USAGE RULES:**\n"
-        "- Run this tool for EVERY query before producing an answer (mandatory baseline search).\n"
-        "- Use for: Internal processes, project documentation, best practices, how-to guides.\n"
+        "- **MANDATORY BASELINE**: Run for EVERY query before producing an answer.\n"
         "- Source Priority: HIGHEST for internal processes & best practices, HIGH for product features.\n"
         "- Citation: Always include source='confluence' and quote key evidence from results.\n"
-        "- Multi-Source Synthesis: Cross-reference with knowledge_base and other sources when available."
+        "- Multi-Source Synthesis: Cross-reference with docs, community, support, slack. When sources conflict, cite both with dates."
     )
 )
 def tool_search_confluence(query: str, max_results: int = 10, space_filter: Optional[str] = None):
@@ -90,14 +89,15 @@ def tool_search_confluence(query: str, max_results: int = 10, space_filter: Opti
     "search_slack",
     description=(
         "Search Slack messages for team communications, decisions, and quick updates. "
-        "Best for: recent discussions, team decisions, quick updates. "
+        "Best for: recent discussions, team decisions, quick updates, release announcements. "
         "Returns: Message excerpts, timestamps, user info with source='slack'. "
         "\n\n**USAGE RULES:**\n"
-        "- Use for: Latest updates, team discussions, informal knowledge, real-time information.\n"
+        "- **MANDATORY BASELINE**: Run for EVERY query before producing an answer (along with docs, community, support, confluence).\n"
         "- Source Priority: HIGHEST for release dates & announcements, HIGH for troubleshooting.\n"
         "- Citation: Include username/channel when relevant (e.g., 'According to @user in #release-announcements').\n"
-        "- Authentication: Requires OAuth - use slack_get_oauth_url if not authenticated.\n"
-        "- Multi-Source Synthesis: Combine with knowledge_base and confluence for comprehensive answers."
+        "- Authentication: Requires OAuth - use get_slack_oauth_url if not authenticated.\n"
+        "- If no results: Mention 'No relevant Slack discussions found' in your answer.\n"
+        "- Multi-Source Synthesis: Combine with community, docs, support and confluence for comprehensive answers."
     )
 )
 def tool_search_slack(query: str, max_results: int = 10, channel_filter: Optional[str] = None):
@@ -136,7 +136,10 @@ def tool_search_slack(query: str, max_results: int = 10, channel_filter: Optiona
         "Get the OAuth authorization URL for users to authenticate with Slack. "
         "\n\n**USAGE:** Call this tool when search_slack fails due to missing authentication. "
         "The user must visit the returned URL to authorize access before using search_slack. "
-        "\n Returns: Dictionary with authorization URL and instructions."
+        "\n\n**IMPORTANT**: Since search_slack is MANDATORY for every query, if authentication fails, "
+        "you MUST call this tool, get the auth URL, present it to the user, and wait for them to authenticate "
+        "before proceeding with the search. "
+        "\nReturns: Dictionary with authorization URL and instructions."
     )
 )
 def slack_get_oauth_url() -> dict:
@@ -194,9 +197,10 @@ def slack_get_oauth_url() -> dict:
         "Best for: user experiences, community solutions, practical tips. "
         "Returns: Post titles, URLs, excerpts with source='community'. "
         "\n\n**USAGE RULES:**\n"
-        "- Use for: User experiences, community solutions, practical tips.\n"
+        "- **MANDATORY BASELINE**: Run for EVERY query before producing an answer.\n"
         "- Source Priority: HIGH for troubleshooting & practical tips.\n"
-        "- Citation: Always include source='community' and quote key evidence from results."
+        "- Citation: Always include source='community' and quote key evidence. Note patterns if multiple users report same issue.\n"
+        "- If no results: Mention 'No relevant community discussions found' in your answer."
     )
 )
 def tool_search_community(query: str, max_results: int = 5):
@@ -210,10 +214,17 @@ def tool_search_community(query: str, max_results: int = 5):
         "Best for: product features, official documentation, setup instructions. "
         "Returns: Document titles, URLs, excerpts with source='docs'. "
         "\n\n**USAGE RULES:**\n"
-        "- Use for: Official product docs, setup guides, technical details.\n"
+        "- **MANDATORY BASELINE**: Run for EVERY query before producing an answer.\n"
         "- Source Priority: HIGHEST for product features & documentation.\n"
-        "- Citation: Always include source='docs' and quote key evidence from results."
-        "- Versioning: Specify document version when relevant to ensure accurate info. (Available versions: latest, cloud, 6.0, 5.2, 5.1)"
+        "- Citation: Always include source='docs' and quote key evidence. Preserve version numbers, dates, IDs.\n"
+        "- Versioning: Specify document version when relevant (Available: latest, cloud, 6.0, 5.2, 5.1).\n"
+        "\n**UPGRADE QUERY WORKFLOW:**\n"
+        "If query contains 'upgrade', 'migration', 'upgrade path':\n"
+        "1. FIRST search 'Incorta Release Support Policy' to get version timeline ordered by RELEASE DATE (not version number)\n"
+        "2. Build sequential path from current → target version (list ALL interim versions)\n"
+        "3. For EACH version search: '[VERSION] release notes', '[VERSION] upgrade considerations', '[FROM] to [TO] upgrade'\n"
+        "4. Collect ALL findings in chronological order. Flag critical transitions (Spark/Python/Zookeeper changes)\n"
+        "5. Also search search_confluence for upgrade information"
     )
 )
 def tool_search_docs(query: str, max_results: int = 5, version: DocVersion = DocVersion.LATEST.value):
@@ -227,9 +238,10 @@ def tool_search_docs(query: str, max_results: int = 5, version: DocVersion = Doc
         "Best for: troubleshooting, known issues, error resolutions. "
         "Returns: Article titles, URLs, excerpts with source='support'. "
         "\n\n**USAGE RULES:**\n"
-        "- Use for: Troubleshooting, known issues, error resolutions.\n"
+        "- **MANDATORY BASELINE**: Run for EVERY query before producing an answer.\n"
         "- Source Priority: HIGHEST for troubleshooting & error resolutions.\n"
-        "- Citation: Always include source='support' and quote key evidence from results."
+        "- Citation: Always include source='support' and quote key evidence. Preserve error codes, version numbers.\n"
+        "- If no results: Mention 'No relevant support articles found' in your answer."
     )
 )
 def tool_search_support(query: str, max_results: int = 5):
@@ -267,9 +279,8 @@ def tool_search_support(query: str, max_results: int = 5):
         "Call this before querying Zendesk data to understand available fields. "
         "Returns: Schema structure with table names and column definitions. "
         "\n\n**USAGE RULES:**\n"
-        "- MUST call this before using query_zendesk to understand available fields.\n"
-        "- Use for: Understanding Zendesk data structure, planning queries.\n"
-        "- Required Step: Always call this first when working with Zendesk data."
+        "- **PREREQUISITE**: MUST call this before using query_zendesk to understand available fields.\n"
+        "- Use for: Understanding Zendesk data structure, planning queries."
     )
 )
 def tool_get_zendesk_schema():
@@ -285,9 +296,8 @@ def tool_get_zendesk_schema():
         "Must call get_zendesk_schema first to understand available fields. "
         "Returns: Query results with columns and rows, source='zendesk'. "
         "\n\n**USAGE RULES:**\n"
-        "- Only call this when user EXPLICITLY asks about Zendesk or support issues.\n"
-        "- MUST call get_zendesk_schema first to understand available fields.\n"
-        "- Use for: Customer pain points, support volume, issue patterns, ticket analysis.\n"
+        "- **ONLY WHEN EXPLICITLY ASKED**: Only call when user explicitly asks about Zendesk or support issues.\n"
+        "- **PREREQUISITE**: MUST call get_zendesk_schema first to understand available fields.\n"
         "- Source Priority: HIGHEST for customer issues & pain points.\n"
         "- Citation: Note patterns if multiple customers report same issue, include source='zendesk'.\n"
         "- PM Value: Identify patterns across customer tickets, connect pain points to features."
@@ -307,9 +317,8 @@ def tool_query_zendesk(query: str):
         "Call this before querying Jira data to understand available fields. "
         "Returns: Schema structure with table names and column definitions. "
         "\n\n**USAGE RULES:**\n"
-        "- MUST call this before using query_jira to understand available fields.\n"
-        "- Use for: Understanding Jira data structure, planning queries.\n"
-        "- Required Step: Always call this first when working with Jira data."
+        "- **PREREQUISITE**: MUST call this before using query_jira to understand available fields.\n"
+        "- Use for: Understanding Jira data structure, planning queries."
     )
 )
 def tool_get_jira_schema():
@@ -320,14 +329,13 @@ def tool_get_jira_schema():
 @mcp.tool(
     "query_jira",
     description=(
-        "Execute SQL query on Jira data in Incorta. " 
+        "Execute SQL query on Jira data in Incorta. "
         "Best for: development status, roadmap, feature progress, bug tracking. "
         "Must call get_jira_schema first to understand available fields. "
         "Returns: Query results with columns and rows, source='jira'. "
         "\n\n**USAGE RULES:**\n"
-        "- Only call this when user EXPLICITLY asks about Jira or engineering status.\n"
-        "- MUST call get_jira_schema first to understand available fields.\n"
-        "- Use for: Development status, roadmap, feature progress, backlog, bug tracking.\n"
+        "- **ONLY WHEN EXPLICITLY ASKED**: Only call when user explicitly asks about Jira or engineering status.\n"
+        "- **PREREQUISITE**: MUST call get_jira_schema first to understand available fields.\n"
         "- Source Priority: HIGHEST for development status & roadmap.\n"
         "- Citation: Include issue status/priority if relevant (e.g., 'Jira ticket PROD-123 is In Progress').\n"
         "- PM Value: Connect customer issues (Zendesk) to development work (Jira), identify blockers."
