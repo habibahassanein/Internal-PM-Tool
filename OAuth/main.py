@@ -14,13 +14,13 @@ from auth.oauth_handler import exchange_code_for_token
 from auth.session_middleware import SlackSessionMiddleware
 
 from context.user_context import user_context
-from tools.confluence_tool import search_confluence
-from tools.slack_tool import search_slack
+# from tools.confluence_tool import search_confluence
+# from tools.slack_tool import search_slack
 # from tools.qdrant_tool import search_knowledge_base
 from tools.search_community_tool import fetch_community_tool
 from tools.search_docs_tool import fetch_docs_tool, DocVersion
 from tools.search_support_tool import fetch_support_tool
-from tools.incorta_tools import query_zendesk, query_jira, get_zendesk_schema, get_jira_schema
+# from tools.incorta_tools import query_zendesk, query_jira, get_zendesk_schema, get_jira_schema
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -63,129 +63,129 @@ class SecureFastMCP(FastMCP):
 mcp = SecureFastMCP("Internal PM Tool MCP Server")
 
 
-@mcp.tool(
-    "search_confluence",
-    description=(
-        "Search Confluence pages for internal documentation, project pages, and process guides. "
-        "Best for: internal processes, best practices, detailed project documentation. "
-        "Returns: Page titles, URLs, excerpts with source='confluence'. "
-        "\n\n**USAGE RULES:**\n"
-        "- Run this tool for EVERY query before producing an answer (mandatory baseline search).\n"
-        "- Use for: Internal processes, project documentation, best practices, how-to guides.\n"
-        "- Source Priority: HIGHEST for internal processes & best practices, HIGH for product features.\n"
-        "- Citation: Always include source='confluence' and quote key evidence from results.\n"
-        "- Multi-Source Synthesis: Cross-reference with knowledge_base and other sources when available."
-    )
-)
-def tool_search_confluence(query: str, max_results: int = 10, space_filter: Optional[str] = None):
-    args = {
-        "query": query,
-        "max_results": max_results,
-        "space_filter": space_filter
-    }
-    return search_confluence(args)
+# @mcp.tool(
+#     "search_confluence",
+#     description=(
+#         "Search Confluence pages for internal documentation, project pages, and process guides. "
+#         "Best for: internal processes, best practices, detailed project documentation. "
+#         "Returns: Page titles, URLs, excerpts with source='confluence'. "
+#         "\n\n**USAGE RULES:**\n"
+#         "- Run this tool for EVERY query before producing an answer (mandatory baseline search).\n"
+#         "- Use for: Internal processes, project documentation, best practices, how-to guides.\n"
+#         "- Source Priority: HIGHEST for internal processes & best practices, HIGH for product features.\n"
+#         "- Citation: Always include source='confluence' and quote key evidence from results.\n"
+#         "- Multi-Source Synthesis: Cross-reference with knowledge_base and other sources when available."
+#     )
+# )
+# def tool_search_confluence(query: str, max_results: int = 10, space_filter: Optional[str] = None):
+#     args = {
+#         "query": query,
+#         "max_results": max_results,
+#         "space_filter": space_filter
+#     }
+#     return search_confluence(args)
 
 
-@mcp.tool(
-    "search_slack",
-    description=(
-        "Search Slack messages for team communications, decisions, and quick updates. "
-        "Best for: recent discussions, team decisions, quick updates. "
-        "Returns: Message excerpts, timestamps, user info with source='slack'. "
-        "\n\n**USAGE RULES:**\n"
-        "- Use for: Latest updates, team discussions, informal knowledge, real-time information.\n"
-        "- Source Priority: HIGHEST for release dates & announcements, HIGH for troubleshooting.\n"
-        "- Citation: Include username/channel when relevant (e.g., 'According to @user in #release-announcements').\n"
-        "- Authentication: Requires OAuth - use slack_get_oauth_url if not authenticated.\n"
-        "- Multi-Source Synthesis: Combine with knowledge_base and confluence for comprehensive answers."
-    )
-)
-def tool_search_slack(query: str, max_results: int = 10, channel_filter: Optional[str] = None):
-    from auth.session_store import get_session_store
+# @mcp.tool(
+#     "search_slack",
+#     description=(
+#         "Search Slack messages for team communications, decisions, and quick updates. "
+#         "Best for: recent discussions, team decisions, quick updates. "
+#         "Returns: Message excerpts, timestamps, user info with source='slack'. "
+#         "\n\n**USAGE RULES:**\n"
+#         "- Use for: Latest updates, team discussions, informal knowledge, real-time information.\n"
+#         "- Source Priority: HIGHEST for release dates & announcements, HIGH for troubleshooting.\n"
+#         "- Citation: Include username/channel when relevant (e.g., 'According to @user in #release-announcements').\n"
+#         "- Authentication: Requires OAuth - use slack_get_oauth_url if not authenticated.\n"
+#         "- Multi-Source Synthesis: Combine with knowledge_base and confluence for comprehensive answers."
+#     )
+# )
+# def tool_search_slack(query: str, max_results: int = 10, channel_filter: Optional[str] = None):
+#     from auth.session_store import get_session_store
     
-    # Get session ID from FastMCP context and set it in our context variable
-    try:
-        ctx = get_context()
-        if ctx and hasattr(ctx, "session_id"):
-            session_id = ctx.session_id
-            context.fastmcp_session_id.set(session_id)
-            logger.info(f"search_slack: Set session ID: {session_id}")
+#     # Get session ID from FastMCP context and set it in our context variable
+#     try:
+#         ctx = get_context()
+#         if ctx and hasattr(ctx, "session_id"):
+#             session_id = ctx.session_id
+#             context.fastmcp_session_id.set(session_id)
+#             logger.info(f"search_slack: Set session ID: {session_id}")
             
-            # Also lookup and set the authenticated user ID
-            store = get_session_store()
-            user_id = store.get_user_by_session(session_id)
-            if user_id:
-                context.authenticated_user_id.set(user_id)
-                logger.info(f"search_slack: Set user ID: {user_id}")
-            else:
-                logger.warning(f"search_slack: No user bound to session {session_id}")
-    except Exception as e:
-        logger.error(f"search_slack: Error getting context: {e}")
+#             # Also lookup and set the authenticated user ID
+#             store = get_session_store()
+#             user_id = store.get_user_by_session(session_id)
+#             if user_id:
+#                 context.authenticated_user_id.set(user_id)
+#                 logger.info(f"search_slack: Set user ID: {user_id}")
+#             else:
+#                 logger.warning(f"search_slack: No user bound to session {session_id}")
+#     except Exception as e:
+#         logger.error(f"search_slack: Error getting context: {e}")
     
-    args = {
-        "query": query,
-        "max_results": max_results,
-        "channel_filter": channel_filter
-    }
-    return search_slack(args)
+#     args = {
+#         "query": query,
+#         "max_results": max_results,
+#         "channel_filter": channel_filter
+#     }
+#     return search_slack(args)
 
 
-@mcp.tool(
-    "get_slack_oauth_url",
-    description=(
-        "Get the OAuth authorization URL for users to authenticate with Slack. "
-        "\n\n**USAGE:** Call this tool when search_slack fails due to missing authentication. "
-        "The user must visit the returned URL to authorize access before using search_slack. "
-        "\n Returns: Dictionary with authorization URL and instructions."
-    )
-)
-def slack_get_oauth_url() -> dict:
-    """
-    Get the OAuth authorization URL for users to authenticate with Slack.
+# @mcp.tool(
+#     "get_slack_oauth_url",
+#     description=(
+#         "Get the OAuth authorization URL for users to authenticate with Slack. "
+#         "\n\n**USAGE:** Call this tool when search_slack fails due to missing authentication. "
+#         "The user must visit the returned URL to authorize access before using search_slack. "
+#         "\n Returns: Dictionary with authorization URL and instructions."
+#     )
+# )
+# def slack_get_oauth_url() -> dict:
+#     """
+#     Get the OAuth authorization URL for users to authenticate with Slack.
     
-    **USAGE:** Call this tool when search_slack fails due to missing authentication.
-    The user must visit the returned URL to authorize access before using search_slack.
+#     **USAGE:** Call this tool when search_slack fails due to missing authentication.
+#     The user must visit the returned URL to authorize access before using search_slack.
 
-    By default use `search_slack` first before calling this tool.
+#     By default use `search_slack` first before calling this tool.
 
-    Returns:
-        Dictionary with authorization URL and instructions
-    """
-    from auth.session_store import get_session_store
+#     Returns:
+#         Dictionary with authorization URL and instructions
+#     """
+#     from auth.session_store import get_session_store
 
-    config = get_oauth_config()
-    if not config.is_configured():
-        return {
-            "ok": False,
-            "error": "OAuth not configured. Please set SLACK_CLIENT_ID and SLACK_CLIENT_SECRET.",
-        }
+#     config = get_oauth_config()
+#     if not config.is_configured():
+#         return {
+#             "ok": False,
+#             "error": "OAuth not configured. Please set SLACK_CLIENT_ID and SLACK_CLIENT_SECRET.",
+#         }
     
-    session_id = None
-    try:
-        ctx = get_context()
-        if ctx and hasattr(ctx, "session_id"):
-            session_id = ctx.session_id
-            logger.info(f"Got FastMCP session ID: {session_id}")
-            # Also set it in our context variable for other functions
-            context.fastmcp_session_id.set(session_id)
-    except Exception as e:
-        logger.error(f"Error getting FastMCP context: {e}")
+#     session_id = None
+#     try:
+#         ctx = get_context()
+#         if ctx and hasattr(ctx, "session_id"):
+#             session_id = ctx.session_id
+#             logger.info(f"Got FastMCP session ID: {session_id}")
+#             # Also set it in our context variable for other functions
+#             context.fastmcp_session_id.set(session_id)
+#     except Exception as e:
+#         logger.error(f"Error getting FastMCP context: {e}")
 
-    if not session_id:
-        return {
-            "ok": False,
-            "error": "No session ID found. Unable to generate OAuth URL.",
-        }
+#     if not session_id:
+#         return {
+#             "ok": False,
+#             "error": "No session ID found. Unable to generate OAuth URL.",
+#         }
 
-    store = get_session_store()
-    state = store.generate_oauth_state(session_id)
+#     store = get_session_store()
+#     state = store.generate_oauth_state(session_id)
 
-    return {
-        "authorization_url": config.get_authorization_url(state=state),
-        "instructions": (
-            "Visit the authorization URL to authenticate. "
-        ),
-    }
+#     return {
+#         "authorization_url": config.get_authorization_url(state=state),
+#         "instructions": (
+#             "Visit the authorization URL to authenticate. "
+#         ),
+#     }
 
 @mcp.tool(
     "search_community",
@@ -260,84 +260,84 @@ def tool_search_support(query: str, max_results: int = 5):
 #     return search_knowledge_base(args)
 
 
-@mcp.tool(
-    "get_zendesk_schema",
-    description=(
-        "Get Zendesk schema details from Incorta (tables and columns). "
-        "Call this before querying Zendesk data to understand available fields. "
-        "Returns: Schema structure with table names and column definitions. "
-        "\n\n**USAGE RULES:**\n"
-        "- MUST call this before using query_zendesk to understand available fields.\n"
-        "- Use for: Understanding Zendesk data structure, planning queries.\n"
-        "- Required Step: Always call this first when working with Zendesk data."
-    )
-)
-def tool_get_zendesk_schema():
-    args = {}
-    return get_zendesk_schema(args)
+# @mcp.tool(
+#     "get_zendesk_schema",
+#     description=(
+#         "Get Zendesk schema details from Incorta (tables and columns). "
+#         "Call this before querying Zendesk data to understand available fields. "
+#         "Returns: Schema structure with table names and column definitions. "
+#         "\n\n**USAGE RULES:**\n"
+#         "- MUST call this before using query_zendesk to understand available fields.\n"
+#         "- Use for: Understanding Zendesk data structure, planning queries.\n"
+#         "- Required Step: Always call this first when working with Zendesk data."
+#     )
+# )
+# def tool_get_zendesk_schema():
+#     args = {}
+#     return get_zendesk_schema(args)
 
 
-@mcp.tool(
-    "query_zendesk",
-    description=(
-        "Execute SQL query on Zendesk data in Incorta. "
-        "Best for: customer issues, support trends, pain point patterns. "
-        "Must call get_zendesk_schema first to understand available fields. "
-        "Returns: Query results with columns and rows, source='zendesk'. "
-        "\n\n**USAGE RULES:**\n"
-        "- Only call this when user EXPLICITLY asks about Zendesk or support issues.\n"
-        "- MUST call get_zendesk_schema first to understand available fields.\n"
-        "- Use for: Customer pain points, support volume, issue patterns, ticket analysis.\n"
-        "- Source Priority: HIGHEST for customer issues & pain points.\n"
-        "- Citation: Note patterns if multiple customers report same issue, include source='zendesk'.\n"
-        "- PM Value: Identify patterns across customer tickets, connect pain points to features."
-    )
-)
-def tool_query_zendesk(query: str):
-    args = {
-        "spark_sql": query
-    }
-    return query_zendesk(args)
+# @mcp.tool(
+#     "query_zendesk",
+#     description=(
+#         "Execute SQL query on Zendesk data in Incorta. "
+#         "Best for: customer issues, support trends, pain point patterns. "
+#         "Must call get_zendesk_schema first to understand available fields. "
+#         "Returns: Query results with columns and rows, source='zendesk'. "
+#         "\n\n**USAGE RULES:**\n"
+#         "- Only call this when user EXPLICITLY asks about Zendesk or support issues.\n"
+#         "- MUST call get_zendesk_schema first to understand available fields.\n"
+#         "- Use for: Customer pain points, support volume, issue patterns, ticket analysis.\n"
+#         "- Source Priority: HIGHEST for customer issues & pain points.\n"
+#         "- Citation: Note patterns if multiple customers report same issue, include source='zendesk'.\n"
+#         "- PM Value: Identify patterns across customer tickets, connect pain points to features."
+#     )
+# )
+# def tool_query_zendesk(query: str):
+#     args = {
+#         "spark_sql": query
+#     }
+#     return query_zendesk(args)
 
 
-@mcp.tool(
-    "get_jira_schema",
-    description=(
-        "Get Jira schema details from Incorta (tables and columns). "
-        "Call this before querying Jira data to understand available fields. "
-        "Returns: Schema structure with table names and column definitions. "
-        "\n\n**USAGE RULES:**\n"
-        "- MUST call this before using query_jira to understand available fields.\n"
-        "- Use for: Understanding Jira data structure, planning queries.\n"
-        "- Required Step: Always call this first when working with Jira data."
-    )
-)
-def tool_get_jira_schema():
-    args = {}
-    return get_jira_schema(args)
+# @mcp.tool(
+#     "get_jira_schema",
+#     description=(
+#         "Get Jira schema details from Incorta (tables and columns). "
+#         "Call this before querying Jira data to understand available fields. "
+#         "Returns: Schema structure with table names and column definitions. "
+#         "\n\n**USAGE RULES:**\n"
+#         "- MUST call this before using query_jira to understand available fields.\n"
+#         "- Use for: Understanding Jira data structure, planning queries.\n"
+#         "- Required Step: Always call this first when working with Jira data."
+#     )
+# )
+# def tool_get_jira_schema():
+#     args = {}
+#     return get_jira_schema(args)
 
 
-@mcp.tool(
-    "query_jira",
-    description=(
-        "Execute SQL query on Jira data in Incorta. " 
-        "Best for: development status, roadmap, feature progress, bug tracking. "
-        "Must call get_jira_schema first to understand available fields. "
-        "Returns: Query results with columns and rows, source='jira'. "
-        "\n\n**USAGE RULES:**\n"
-        "- Only call this when user EXPLICITLY asks about Jira or engineering status.\n"
-        "- MUST call get_jira_schema first to understand available fields.\n"
-        "- Use for: Development status, roadmap, feature progress, backlog, bug tracking.\n"
-        "- Source Priority: HIGHEST for development status & roadmap.\n"
-        "- Citation: Include issue status/priority if relevant (e.g., 'Jira ticket PROD-123 is In Progress').\n"
-        "- PM Value: Connect customer issues (Zendesk) to development work (Jira), identify blockers."
-    )
-)
-def tool_query_jira(query: str):
-    args = {
-        "spark_sql": query
-    }
-    return query_jira(args)
+# @mcp.tool(
+#     "query_jira",
+#     description=(
+#         "Execute SQL query on Jira data in Incorta. " 
+#         "Best for: development status, roadmap, feature progress, bug tracking. "
+#         "Must call get_jira_schema first to understand available fields. "
+#         "Returns: Query results with columns and rows, source='jira'. "
+#         "\n\n**USAGE RULES:**\n"
+#         "- Only call this when user EXPLICITLY asks about Jira or engineering status.\n"
+#         "- MUST call get_jira_schema first to understand available fields.\n"
+#         "- Use for: Development status, roadmap, feature progress, backlog, bug tracking.\n"
+#         "- Source Priority: HIGHEST for development status & roadmap.\n"
+#         "- Citation: Include issue status/priority if relevant (e.g., 'Jira ticket PROD-123 is In Progress').\n"
+#         "- PM Value: Connect customer issues (Zendesk) to development work (Jira), identify blockers."
+#     )
+# )
+# def tool_query_jira(query: str):
+#     args = {
+#         "spark_sql": query
+#     }
+#     return query_jira(args)
 
 
 @mcp.custom_route("/health", methods=["GET"])
