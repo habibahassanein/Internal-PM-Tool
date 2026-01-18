@@ -248,30 +248,6 @@ def tool_search_support(query: str, max_results: int = 5):
     return fetch_support_tool(query=query, max_results=max_results)
 
 
-# @mcp.tool(
-#     "search_knowledge_base",
-#     description=(
-#         "Search the knowledge base using vector similarity. Contains Incorta Community articles, "
-#         "official documentation, and support articles. "
-#         "Best for: product features, official documentation, authoritative product information. "
-#         "Returns: Article titles, URLs, text excerpts, relevance scores with source='knowledge_base'. "
-#         "\n\n**USAGE RULES:**\n"
-#         "- Run this tool for EVERY query before producing an answer (mandatory baseline search).\n"
-#         "- Use for: Official product docs, community articles, support content, authoritative information.\n"
-#         "- Source Priority: HIGHEST for product features & documentation, HIGH for troubleshooting.\n"
-#         "- Citation: Always include source='knowledge_base', preserve technical details (versions, dates, IDs).\n"
-#         "- Multi-Source Synthesis: Cross-reference with confluence and other sources when available.\n"
-#         "- Upgrade Queries: For upgrade questions, search for 'Incorta Release Support Policy' and version-specific considerations."
-#     )
-# )
-# def tool_search_knowledge_base(query: str, limit: int = 10):
-#     args = {
-#         "query": query,
-#         "limit": limit
-#     }
-#     return search_knowledge_base(args)
-
-
 @mcp.tool(
     "get_zendesk_schema",
     description=(
