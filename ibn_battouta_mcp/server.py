@@ -100,77 +100,38 @@ def main(port: int, log_level: str, json_response: bool) -> int:
         No Gemini needed - Claude will handle synthesis and citations.
         """
         return [
-            # types.Tool(
-            #     name="initialize_pm_intelligence",
-            #     description=(
-            #         "MUST be called once at the beginning of each session to establish proper context "
-            #         "for multi-source PM intelligence. Provides guidelines for tool usage, source priorities, "
-            #         "citation rules, and PM-specific analysis patterns."
-            #     ),
-            #     inputSchema=make_boolean_flag_schema(
-            #         "initialize_session",
-            #         "Flag to initialize the session. Must be set to true."
-            #     ),
-            # ),
-            # types.Tool(
-            #     name="search_confluence",
-            #     description=(
-            #         "Search Confluence pages for internal documentation, project pages, and process guides. "
-            #         "Best for: internal processes, best practices, detailed project documentation. "
-            #         "Returns: Page titles, URLs, excerpts with source='confluence'."
-            #     ),
-            #     inputSchema=make_search_schema(
-            #         "Search query for Confluence",
-            #         {
-            #             "max_results": {
-            #                 "type": "integer",
-            #                 "description": "Maximum number of results to return",
-            #                 "default": 10,
-            #                 "minimum": 1
-            #             },
-            #             "space_filter": {
-            #                 "type": "string",
-            #                 "description": "Optional: Specific Confluence space to search"
-            #             }
-            #         }
-            #     ),
-            # ),
-            # types.Tool(
-            #     name="search_slack",
-            #     description=(
-            #         "Search Slack messages for team discussions, announcements, and real-time updates. "
-            #         "Best for: latest updates, informal knowledge, team discussions, recent announcements. "
-            #         "Returns: Message text, username, channel, timestamp, permalink with source='slack'."
-            #     ),
-            #     inputSchema=make_search_schema(
-            #         "Search query for Slack messages",
-            #         {
-            #             "max_results": {
-            #                 "type": "integer",
-            #                 "description": "Maximum number of results to return",
-            #                 "default": 10,
-            #                 "minimum": 1
-            #             },
-            #             "channel_filter": {
-            #                 "type": "string",
-            #                 "description": "Optional: Specific channel to search"
-            #             },
-            #             "max_age_hours": {
-            #                 "type": "integer",
-            #                 "description": "Maximum age of messages in hours (default: 168 = 1 week)",
-            #                 "default": 168
-            #             }
-            #         }
-            #     ),
-            # ),
             types.Tool(
                 name="search_knowledge_base",
                 description=(
-                    "Search the knowledge base using vector similarity. Contains Incorta Community articles, "
-                    "official documentation, and support articles. \n"
-                    "Best for: product features, official documentation, authoritative product information. \n"
-                    "Use this for any Incorta product-related queries."
-                    "Returns: Article titles, URLs, text excerpts, relevance scores with source='knowledge_base'."
+                    """Search comprehensive Incorta documentation using vector similarity.
+                    
+                    This is your primary tool for accessing accurate, up-to-date Incorta information.
+                    Always use this tool before answering Incorta-specific questions.
+
+                    **Knowledge Base Sources:**
+                    - Incorta Community Documentation: Community-contributed guides and best practices
+                    - Official Incorta Documentation: Product documentation, features, and functionality
+                    - Incorta Support Documentation: Support articles, troubleshooting guides, and solutions
+                    
+                    **Use Cases:**
+                    - Answer questions about Incorta features, functionality, and best practices
+                    - Provide guidance on Incorta configuration and administration
+                    - Help troubleshoot Incorta-related issues
+                    - Explain Incorta concepts and terminology
+                    - Find specific documentation sources to cite in responses
+                    
+                    **Best Practices:**
+                    - Search before providing Incorta-specific answers
+                    - Use specific, focused queries for better results
+                    - Increase limit parameter for broader research
+                    - Cite sources from search results when answering questions
+
+                    Args:
+                        query (str): Search query - be specific for best results
+                        limit (int): Number of results to return (default: 5, increase for comprehensive research)
+
+                    Returns:
+                        dict: Search results with relevance scores, titles, URLs, and content snippets"""
                 ),
                 inputSchema=make_search_schema(
                     "Search query for knowledge base",
@@ -184,44 +145,6 @@ def main(port: int, log_level: str, json_response: bool) -> int:
                     }
                 ),
             )
-            # types.Tool(
-            #     name="get_zendesk_schema",
-            #     description=(
-            #         "Get Zendesk schema details from Incorta (tables and columns). "
-            #         "Call this before querying Zendesk data to understand available fields. "
-            #         "Returns: Schema structure with table names and column definitions."
-            #     ),
-            #     inputSchema=make_boolean_flag_schema("fetch_schema", "Flag to fetch schema details"),
-            # ),
-            # types.Tool(
-            #     name="query_zendesk",
-            #     description=(
-            #         "Execute SQL query on Zendesk data in Incorta. "
-            #         "Best for: customer issues, support trends, pain point patterns. "
-            #         "Must call get_zendesk_schema first to understand available fields. "
-            #         "Returns: Query results with columns and rows, source='zendesk'."
-            #     ),
-            #     inputSchema=make_sql_query_schema(),
-            # ),
-            # types.Tool(
-            #     name="get_jira_schema",
-            #     description=(
-            #         "Get Jira schema details from Incorta (tables and columns). "
-            #         "Call this before querying Jira data to understand available fields. "
-            #         "Returns: Schema structure with table names and column definitions."
-            #     ),
-            #     inputSchema=make_boolean_flag_schema("fetch_schema", "Flag to fetch schema details"),
-            # ),
-            # types.Tool(
-            #     name="query_jira",
-            #     description=(
-            #         "Execute SQL query on Jira data in Incorta. "
-            #         "Best for: development status, roadmap, feature progress, bug tracking. "
-            #         "Must call get_jira_schema first to understand available fields. "
-            #         "Returns: Query results with columns and rows, source='jira'."
-            #     ),
-            #     inputSchema=make_sql_query_schema(),
-            # ),
         ]
 
     # ---------------------------- Tool Dispatcher ----------------------------#
@@ -235,37 +158,10 @@ def main(port: int, log_level: str, json_response: bool) -> int:
         logger.debug(f"raw arguments: {json.dumps(arguments, indent=2)}")
 
         try:
-            # if name == "initialize_pm_intelligence":
-            #     result = get_pm_system_prompt(arguments)
-            #     return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
-
-            # elif name == "search_confluence":
-            #     result = search_confluence(arguments)
-            #     return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
-
-            # elif name == "search_slack":
-            #     result = search_slack(arguments)
-            #     return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
 
             if name == "search_knowledge_base":
                 result = search_knowledge_base(arguments)
                 return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
-
-            # elif name == "get_zendesk_schema":
-            #     result = get_zendesk_schema(arguments)
-            #     return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
-
-            # elif name == "query_zendesk":
-            #     result = query_zendesk(arguments)
-            #     return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
-
-            # elif name == "get_jira_schema":
-            #     result = get_jira_schema(arguments)
-            #     return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
-
-            # elif name == "query_jira":
-            #     result = query_jira(arguments)
-            #     return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
 
             else:
                 return [types.TextContent(type="text", text=f"Unknown tool: {name}")]
@@ -301,14 +197,7 @@ def main(port: int, log_level: str, json_response: bool) -> int:
                     "streamable_http": "/mcp",
                 },
                 "tools": [
-                    "initialize_pm_intelligence",
-                    "search_confluence",
-                    "search_slack",
                     "search_knowledge_base",
-                    "get_zendesk_schema",
-                    "query_zendesk",
-                    "get_jira_schema",
-                    "query_jira",
                 ],
             }
         )

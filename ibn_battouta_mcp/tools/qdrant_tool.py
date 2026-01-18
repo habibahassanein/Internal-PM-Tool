@@ -38,19 +38,35 @@ def get_qdrant_client():
 
 def search_knowledge_base(arguments: Dict[str, Any]) -> dict:
     """
-    Search the knowledge base using vector similarity.
+    Search comprehensive Incorta documentation using vector similarity.
+    
+    This is your primary tool for accessing accurate, up-to-date Incorta information.
+    Always use this tool before answering Incorta-specific questions.
 
-    Knowledge base contains:
-    - Incorta Community articles
-    - Documentation
-    - Support articles
+    **Knowledge Base Sources:**
+    - Incorta Community Documentation: Community-contributed guides and best practices
+    - Official Incorta Documentation: Product documentation, features, and functionality
+    - Incorta Support Documentation: Support articles, troubleshooting guides, and solutions
+    
+    **Use Cases:**
+    - Answer questions about Incorta features, functionality, and best practices
+    - Provide guidance on Incorta configuration and administration
+    - Help troubleshoot Incorta-related issues
+    - Explain Incorta concepts and terminology
+    - Find specific documentation sources to cite in responses
+    
+    **Best Practices:**
+    - Search before providing Incorta-specific answers
+    - Use specific, focused queries for better results
+    - Increase limit parameter for broader research
+    - Cite sources from search results when answering questions
 
     Args:
-        query (str): Search query
-        limit (int): Number of results to return (default: 5)
+        query (str): Search query - be specific for best results
+        limit (int): Number of results to return (default: 5, increase for comprehensive research)
 
     Returns:
-        dict: Search results with relevance scores
+        dict: Search results with relevance scores, titles, URLs, and content snippets
     """
     query = arguments["query"]
     limit = arguments.get("limit", 5)
