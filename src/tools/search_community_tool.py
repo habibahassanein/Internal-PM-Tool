@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import re
+import time
 
 def extract_posts(results: list) -> list:
     """
@@ -88,17 +89,23 @@ def fetch_community_tool(query: str, max_results=5) -> dict:
         "t:cp": "search/contributions/page",
         "q": query.lower(),
         "limit": max_results,
-        "timestamp": "1766584943474",
+        "timestamp": str(int(time.time() * 1000)),
         "searchContext": "wdmcw32433|community"
     }
 
     response = requests.get(url, params=params)
     response.raise_for_status()
 
-    if response.json() != []:
+    try:
+        data = response.json()
+    except Exception:
+        return {
+            "results": [],
+            "error": "Community search returned non-JSON response"
+        }
 
-        posts_data = extract_posts(response.json())
-
+    if data != [] and isinstance(data, list):
+        posts_data = extract_posts(data)
         posts_info = [extract_post_info(post.get("data")[0]) for post in posts_data]
 
         return {
