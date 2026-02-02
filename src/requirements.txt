@@ -28,3 +28,7 @@ rich==14.1.0
 aiohttp
 fastmcp==2.11.2
 bs4
+
+# Observability
+langfuse>=2.0.0
+tiktoken>=0.5.0

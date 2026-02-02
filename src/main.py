@@ -17,14 +17,21 @@ from tools.search_community_tool import fetch_community_tool
 from tools.search_docs_tool import fetch_docs_tool, DocVersion
 from tools.search_support_tool import fetch_support_tool
 from dotenv import load_dotenv
+from langfuse import Langfuse
 
 load_dotenv()
 
-
+import os
 import logging
 logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger("uvicorn.error")
+
+langfuse = Langfuse(
+    secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+    public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+    host=os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com"),
+)
 
 PORT = 8080
 
@@ -71,7 +78,17 @@ mcp = SecureFastMCP("Internal PM Tool MCP Server")
     )
 )
 def tool_search_community(query: str, max_results: int = 5):
-    return fetch_community_tool(query=query, max_results=max_results)
+    trace = langfuse.trace(name="search_community", input={"query": query, "max_results": max_results})
+    span = trace.span(name="fetch_community", input={"query": query, "max_results": max_results})
+    try:
+        result = fetch_community_tool(query=query, max_results=max_results)
+        span.end(output=result)
+        trace.update(output=result)
+        return result
+    except Exception as e:
+        span.end(output={"error": str(e)}, level="ERROR")
+        trace.update(output={"error": str(e)})
+        raise
 
 
 @mcp.tool(
@@ -88,7 +105,17 @@ def tool_search_community(query: str, max_results: int = 5):
     )
 )
 def tool_search_docs(query: str, max_results: int = 5, version: DocVersion = DocVersion.LATEST.value):
-    return fetch_docs_tool(query=query, max_results=max_results, version=version)
+    trace = langfuse.trace(name="search_docs", input={"query": query, "max_results": max_results, "version": version})
+    span = trace.span(name="fetch_docs", input={"query": query, "max_results": max_results, "version": version})
+    try:
+        result = fetch_docs_tool(query=query, max_results=max_results, version=version)
+        span.end(output=result)
+        trace.update(output=result)
+        return result
+    except Exception as e:
+        span.end(output={"error": str(e)}, level="ERROR")
+        trace.update(output={"error": str(e)})
+        raise
 
 
 @mcp.tool(
@@ -104,7 +131,17 @@ def tool_search_docs(query: str, max_results: int = 5, version: DocVersion = Doc
     )
 )
 def tool_search_support(query: str, max_results: int = 5):
-    return fetch_support_tool(query=query, max_results=max_results)
+    trace = langfuse.trace(name="search_support", input={"query": query, "max_results": max_results})
+    span = trace.span(name="fetch_support", input={"query": query, "max_results": max_results})
+    try:
+        result = fetch_support_tool(query=query, max_results=max_results)
+        span.end(output=result)
+        trace.update(output=result)
+        return result
+    except Exception as e:
+        span.end(output={"error": str(e)}, level="ERROR")
+        trace.update(output={"error": str(e)})
+        raise
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -282,6 +319,9 @@ app = mcp.http_app(
     ]
 )
 
+import atexit
+atexit.register(langfuse.flush)
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
@@ -289,7 +329,7 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=PORT,
         log_level="debug",
-        workers=1, 
+        workers=1,
         proxy_headers=True,
         forwarded_allow_ips="*"
     )
