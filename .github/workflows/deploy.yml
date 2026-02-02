@@ -91,6 +91,12 @@ jobs:
           ssh $SERVER_USER@$SERVER_HOST "
             echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker pull $DOCKER_IMAGE
+            # Stop any container using the target port
+            OLD_CONTAINER=\$(docker ps --filter publish=$PORT --format '{{.Names}}')
+            if [ -n \"\$OLD_CONTAINER\" ]; then
+              docker stop \$OLD_CONTAINER 2>/dev/null || true
+              docker rm \$OLD_CONTAINER 2>/dev/null || true
+            fi
             docker stop $CONTAINER_NAME 2>/dev/null || true
             docker rm $CONTAINER_NAME 2>/dev/null || true
             docker run -d \
