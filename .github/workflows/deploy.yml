@@ -86,16 +86,12 @@ jobs:
               CONTAINER_NAME="internal-pm-search-apis"
               ;;
             "semantic-search-public-docs")
-              PORT=9093
+              PORT=9091
               CONTAINER_NAME="internal-pm-semantic-search"
               ;;
             "feat/search-apis")
-              PORT=9094
+              PORT=9093
               CONTAINER_NAME="internal-pm-feat-search-apis"
-              ;;
-            "feat/public-docs")
-              PORT=9091
-              CONTAINER_NAME="internal-pm-public-docs"
               ;;
             *)
               PORT=9095
@@ -137,9 +133,8 @@ jobs:
           case "$BRANCH_NAME" in
             "main") PORT=8080 ;;
             "search-apis") PORT=9092 ;;
-            "semantic-search-public-docs") PORT=9093 ;;
-            "feat/search-apis") PORT=9094 ;;
-            "feat/public-docs") PORT=9091 ;;
+            "semantic-search-public-docs") PORT=9091 ;;
+            "feat/search-apis") PORT=9093 ;;
             *) PORT=9095 ;;
           esac
 
