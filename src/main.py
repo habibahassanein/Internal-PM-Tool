@@ -119,6 +119,24 @@ async def health_check(request: StarletteRequest):
     return JSONResponse({"status": "healthy"})
 
 
+@mcp.custom_route("/chat", methods=["POST"])
+async def chat_endpoint(request: StarletteRequest):
+    """LangGraph chat endpoint with Langfuse cost tracking."""
+    from agent import chat
+
+    try:
+        body = await request.json()
+        message = body.get("message", "")
+        if not message:
+            return JSONResponse({"error": "message is required"}, status_code=400)
+
+        response = await chat(message)
+        return JSONResponse({"response": response})
+    except Exception as e:
+        logger.error(f"Chat endpoint error: {e}", exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 
 @mcp.custom_route("/oauth2callback", methods=["GET"])
 async def oauth_callback(request: StarletteRequest) -> HTMLResponse:

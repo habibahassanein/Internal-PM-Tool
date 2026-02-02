@@ -22,12 +22,14 @@ python-dotenv
 click>=8.2.1
 rich==14.1.0
 
-# Note: No Gemini/LangChain dependencies!
-# Claude (MCP client) handles all LLM operations
-
 aiohttp
 fastmcp==2.11.2
 bs4
+
+# LangGraph Agent
+langchain-anthropic>=0.3.0
+langchain-core>=0.3.0
+langgraph>=0.2.0
 
 # Observability
 langfuse>=2.0.0
