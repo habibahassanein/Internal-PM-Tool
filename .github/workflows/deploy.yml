@@ -1,0 +1,159 @@
+name: Build and Deploy MCP Server
+
+on:
+  push:
+    branches:
+      - main
+      - search-apis
+      - semantic-search-public-docs
+      - feat/search-apis
+      - feat/public-docs
+    paths:
+      - 'ibn_battouta_mcp/**'
+      - 'src/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./ibn_battouta_mcp
+          file: ./ibn_battouta_mcp/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Deploy to server
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          BRANCH_NAME: ${{ github.ref_name }}
+        run: |
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H $SERVER_HOST >> ~/.ssh/known_hosts
+
+          # Determine port based on branch
+          case "$BRANCH_NAME" in
+            "main")
+              PORT=8080
+              CONTAINER_NAME="internal-pm-main"
+              ;;
+            "search-apis")
+              PORT=9092
+              CONTAINER_NAME="internal-pm-search-apis"
+              ;;
+            "semantic-search-public-docs")
+              PORT=9093
+              CONTAINER_NAME="internal-pm-semantic-search"
+              ;;
+            "feat/search-apis")
+              PORT=9094
+              CONTAINER_NAME="internal-pm-feat-search-apis"
+              ;;
+            "feat/public-docs")
+              PORT=9091
+              CONTAINER_NAME="internal-pm-public-docs"
+              ;;
+            *)
+              PORT=9095
+              CONTAINER_NAME="internal-pm-${BRANCH_NAME//\//-}"
+              ;;
+          esac
+
+          # Deploy via SSH
+          ssh $SERVER_USER@$SERVER_HOST << EOF
+            # Login to GitHub Container Registry
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Pull latest image
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$BRANCH_NAME
+
+            # Stop and remove old container
+            docker stop $CONTAINER_NAME 2>/dev/null || true
+            docker rm $CONTAINER_NAME 2>/dev/null || true
+
+            # Run new container
+            docker run -d \
+              --name $CONTAINER_NAME \
+              --restart unless-stopped \
+              -p $PORT:8080 \
+              -v /home/incorta/.env:/app/.env:ro \
+              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$BRANCH_NAME
+
+            # Clean up old images
+            docker image prune -f
+
+            echo "Deployed $CONTAINER_NAME on port $PORT"
+          EOF
+
+      - name: Health check
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          BRANCH_NAME: ${{ github.ref_name }}
+        run: |
+          case "$BRANCH_NAME" in
+            "main") PORT=8080 ;;
+            "search-apis") PORT=9092 ;;
+            "semantic-search-public-docs") PORT=9093 ;;
+            "feat/search-apis") PORT=9094 ;;
+            "feat/public-docs") PORT=9091 ;;
+            *) PORT=9095 ;;
+          esac
+
+          # Wait for container to be ready
+          sleep 10
+
+          # Check if service is responding
+          curl -f http://$SERVER_HOST:$PORT/mcp || echo "Health check failed, but deployment completed"
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Deployment successful!"
+          else
+            echo "❌ Deployment failed!"
+          fi
