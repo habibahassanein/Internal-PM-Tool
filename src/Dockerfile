@@ -20,7 +20,6 @@ RUN apt-get update && apt-get install -y \
 # Add user local bin to PATH to suppress warnings
 ENV PATH=/root/.local/bin:$PATH
 
-COPY .env /app
 COPY . /app
 
 # Install Python dependencies
