@@ -1,18 +1,14 @@
-name: Build and Deploy MCP Server
+name: Build and Deploy
 
 on:
   push:
     branches:
-      - main
-      - search-apis
-      - semantic-search-public-docs
-      - feat/search-apis
       - feat/public-docs
+      - semantic-search-public-docs
     paths:
-      - 'ibn_battouta_mcp/**'
       - 'src/**'
       - '.github/workflows/deploy.yml'
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -75,31 +71,15 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H $SERVER_HOST >> ~/.ssh/known_hosts
 
-          # Determine port based on branch
+          # Determine port and container name based on branch
           case "$BRANCH_NAME" in
-            "main")
-              PORT=8080
-              CONTAINER_NAME="internal-pm-main"
-              ;;
-            "search-apis")
-              PORT=9092
-              CONTAINER_NAME="internal-pm-search-apis"
-              ;;
-            "semantic-search-public-docs")
-              PORT=9093
-              CONTAINER_NAME="internal-pm-semantic-search"
-              ;;
-            "feat/search-apis")
-              PORT=9094
-              CONTAINER_NAME="internal-pm-feat-search-apis"
-              ;;
             "feat/public-docs")
               PORT=9091
               CONTAINER_NAME="internal-pm-public-docs"
               ;;
-            *)
-              PORT=9095
-              CONTAINER_NAME="internal-pm-${BRANCH_NAME//\//-}"
+            "semantic-search-public-docs")
+              PORT=9093
+              CONTAINER_NAME="internal-pm-semantic-search"
               ;;
           esac
 
@@ -135,25 +115,19 @@ jobs:
           BRANCH_NAME: ${{ github.ref_name }}
         run: |
           case "$BRANCH_NAME" in
-            "main") PORT=8080 ;;
-            "search-apis") PORT=9092 ;;
-            "semantic-search-public-docs") PORT=9093 ;;
-            "feat/search-apis") PORT=9094 ;;
             "feat/public-docs") PORT=9091 ;;
-            *) PORT=9095 ;;
+            "semantic-search-public-docs") PORT=9093 ;;
           esac
 
-          # Wait for container to be ready
           sleep 10
 
-          # Check if service is responding
           curl -f http://$SERVER_HOST:$PORT/mcp || echo "Health check failed, but deployment completed"
 
       - name: Notify deployment status
         if: always()
         run: |
           if [ "${{ job.status }}" == "success" ]; then
-            echo "✅ Deployment successful!"
+            echo "Deployment successful for ${{ github.ref_name }} on port $PORT"
           else
-            echo "❌ Deployment failed!"
+            echo "Deployment failed for ${{ github.ref_name }}"
           fi
