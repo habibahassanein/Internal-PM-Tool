@@ -4,7 +4,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
-from langfuse.callback import CallbackHandler as LangfuseCallbackHandler
+from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
 
 from tools.search_community_tool import fetch_community_tool
 from tools.search_docs_tool import fetch_docs_tool, DocVersion
