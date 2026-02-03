@@ -70,11 +70,7 @@ agent = create_react_agent(llm, tools)
 
 
 def get_langfuse_handler():
-    return LangfuseCallbackHandler(
-        secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-        public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-        host=os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com"),
-    )
+    return LangfuseCallbackHandler()
 
 
 async def chat(message: str) -> str:
