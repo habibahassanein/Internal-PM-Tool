@@ -495,6 +495,22 @@ def main(port: int, log_level: str, json_response: bool) -> int:
                 status_code=500
             )
 
+    async def handle_chat(request: StarletteRequest):
+        """LangGraph chat endpoint with Langfuse cost tracking."""
+        from agent import chat
+
+        try:
+            body = await request.json()
+            message = body.get("message", "")
+            if not message:
+                return JSONResponse({"error": "message is required"}, status_code=400)
+
+            response = await chat(message)
+            return JSONResponse({"response": response})
+        except Exception as e:
+            logger.exception(f"Chat endpoint error: {e}")
+            return JSONResponse({"error": str(e)}, status_code=500)
+
     async def handle_auth_status(request: StarletteRequest):
         """Check session status (for debugging)."""
         session_id = request.query_params.get("session_id", "")
@@ -532,6 +548,7 @@ def main(port: int, log_level: str, json_response: bool) -> int:
         routes=[
             Route("/", endpoint=handle_root, methods=["GET"]),
             Route("/sse", endpoint=handle_sse, methods=["GET"]),
+            Route("/chat", endpoint=handle_chat, methods=["POST"]),
             Route("/auth/slack", endpoint=handle_auth_start, methods=["GET"]),
             Route("/auth/callback", endpoint=handle_auth_callback, methods=["GET"]),
             Route("/auth/status", endpoint=handle_auth_status, methods=["GET"]),
