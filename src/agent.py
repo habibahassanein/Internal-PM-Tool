@@ -56,7 +56,7 @@ def get_langfuse_handler():
 
 
 async def chat(message: str) -> str:
-    """Run the agent with a user message and return the final response."""
+    """Run the agent with a user message and return the final response with Langfuse tracking."""
     handler = get_langfuse_handler()
 
     inputs = {
